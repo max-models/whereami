@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+# DetectMachine - Bash version
+# Usage:
+#   source detect_machine.sh
+# or
+#   ./detect_machine.sh
+
+set -euo pipefail
+
+#######################################
+# Helpers
+#######################################
+fatal() { echo "ERROR: $*" >&2; exit 1; }
+warn()  { echo "WARNING: $*" >&2; }
+info()  { echo "INFO: $*"; }
+
+in_list() {
+    local val="$1"; shift
+    for x in "$@"; do [[ "$x" == "$val" ]] && return 0; done
+    return 1
+}
+
+#######################################
+# Supported values
+#######################################
+KNOWN_MACHINE_NAMES=(
+"Raven" "Viper-GPU" "Viper-CPU" "Cobra"
+"LUMI-G" "LUMI-C" "LUMI-D"
+"Leonardo (Booster)" "Leonardo (DCGP)"
+"Marconi"
+"Vega (CPU)" "Vega (GPU)"
+"Discoverer" "Arriesgado"
+"Hawk" "Hunter" "Unspecified"
+"SuperMUC-NG Phase 1" "CoolMUC-2" "CoolMUC-3"
+"JFRS" "TOK"
+"Marenostrum 5 General Purpose (CPU)"
+"Marenostrum 5 Accelerated (GPU)"
+"Karolina (CPU)" "Karolina (GPU)"
+"Barbora (CPU)" "Barbora (GPU)"
+"Baobab" "Perlmutter"
+"Shared Runner" "Shared GPU Runner (NVIDIA)" "Shared GPU Runner (AMD)"
+"Pitagora (DCGP)" "Pitagora (Booster)"
+"JUWELS (Booster)"
+)
+
+KNOWN_MACHINE_HOSTS=(
+"" "MPCDF" "CSC" "CINECA" "IZUM"
+"Sofia Tech Park" "BSC" "HLRS" "LRZ"
+"IFERC-CSC" "MPG IPP" "IT4Innovations"
+"University of Geneva" "NERSC" "JSC"
+)
+
+SUPPORTED_CPU_VENDORS=("" "Intel" "AMD" "IBM" "EPI-RVV")
+SUPPORTED_CPUS=(
+"native" "EmeraldRapids" "SapphireRapids" "IceLake" "SkyLake"
+"CascadeLake" "KnightsLanding" "Broadwell" "Haswell"
+"IvyBridge" "SandyBridge" "Nehalem" "Core2"
+"Turin" "Bergamo" "Genoa" "Trento" "Milan" "Rome"
+"Power8" "Power9" "avispado"
+)
+
+SUPPORTED_GPU_VENDORS=("none" "NVIDIA" "AMD")
+SUPPORTED_GPUS=("none" "A100" "A40" "Tesla V100" "H100" "MI250X" "MI300A" "MI210")
+
+#######################################
+# Initialize defaults
+#######################################
+HOSTNAME_SYS="$(hostname)"
+HOST_ENV="${HOST:-}"
+HOSTNAME_ENV="${HOSTNAME:-$HOSTNAME_SYS}"
+
+MACHINE_NAME=""
+MACHINE_HOST=""
+CPU_VENDOR=""
+CHIP="native"
+GPU_VENDOR="none"
+GPU_NAME="none"
+
+#######################################
+# Detection logic (core high-value systems)
+#######################################
+
+# Raven
+if [[ "$HOST_ENV" =~ raven ]]; then
+    MACHINE_NAME="Raven"
+    MACHINE_HOST="MPCDF"
+    CPU_VENDOR="Intel"
+    CHIP="IceLake"
+    GPU_VENDOR="NVIDIA"
+    GPU_NAME="A100"
+
+# Viper GPU
+elif [[ "$HOSTNAME_ENV" =~ viper12 ]]; then
+    MACHINE_NAME="Viper-GPU"
+    MACHINE_HOST="MPCDF"
+    CPU_VENDOR="AMD"
+    CHIP="Genoa"
+    GPU_VENDOR="AMD"
+    GPU_NAME="MI300A"
+
+# Viper CPU
+elif [[ "$HOSTNAME_ENV" =~ viper ]]; then
+    MACHINE_NAME="Viper-CPU"
+    MACHINE_HOST="MPCDF"
+    CPU_VENDOR="AMD"
+    CHIP="Genoa"
+
+# Cobra
+elif [[ "$HOST_ENV" =~ cobra ]]; then
+    MACHINE_NAME="Cobra"
+    MACHINE_HOST="MPCDF"
+    CPU_VENDOR="Intel"
+    CHIP="SkyLake"
+    GPU_VENDOR="NVIDIA"
+    GPU_NAME="Tesla V100"
+
+# LUMI
+elif [[ "${LMOD_ADMIN_FILE:-}" =~ lumi ]]; then
+    PARTITION="${PARTITION:-LUMI-G}"
+    case "$PARTITION" in
+        LUMI-G)
+            MACHINE_NAME="LUMI-G"
+            MACHINE_HOST="CSC"
+            CPU_VENDOR="AMD"
+            CHIP="Trento"
+            GPU_VENDOR="AMD"
+            GPU_NAME="MI250X"
+            ;;
+        LUMI-C)
+            MACHINE_NAME="LUMI-C"
+            MACHINE_HOST="CSC"
+            CPU_VENDOR="AMD"
+            CHIP="Milan"
+            ;;
+        LUMI-D)
+            MACHINE_NAME="LUMI-D"
+            MACHINE_HOST="CSC"
+            CPU_VENDOR="AMD"
+            CHIP="Rome"
+            ;;
+        *) fatal "Unsupported LUMI partition: $PARTITION" ;;
+    esac
+
+# Leonardo
+elif [[ "${HPC_SYSTEM:-}" =~ leonardo ]]; then
+    PARTITION="${PARTITION:-Booster}"
+    if [[ "$PARTITION" == "Booster" ]]; then
+        MACHINE_NAME="Leonardo (Booster)"
+        MACHINE_HOST="CINECA"
+        CPU_VENDOR="Intel"
+        CHIP="IceLake"
+        GPU_VENDOR="NVIDIA"
+        GPU_NAME="A100"
+    else
+        MACHINE_NAME="Leonardo (DCGP)"
+        MACHINE_HOST="CINECA"
+        CPU_VENDOR="Intel"
+        CHIP="SapphireRapids"
+    fi
+
+# Marconi
+elif [[ "${HPC_SYSTEM:-}" =~ marconi ]]; then
+    MACHINE_NAME="Marconi"
+    MACHINE_HOST="CINECA"
+    CPU_VENDOR="Intel"
+    CHIP="SkyLake"
+
+# Vega
+elif [[ "$HOSTNAME_ENV" =~ vega ]]; then
+    PARTITION="${PARTITION:-GPU}"
+    MACHINE_HOST="IZUM"
+    CPU_VENDOR="AMD"
+    CHIP="Rome"
+    if [[ "$PARTITION" == "GPU" ]]; then
+        MACHINE_NAME="Vega (GPU)"
+        GPU_VENDOR="NVIDIA"
+        GPU_NAME="A100"
+    else
+        MACHINE_NAME="Vega (CPU)"
+    fi
+
+# Perlmutter
+elif [[ "${NERSC_HOST:-}" =~ perlmutter ]]; then
+    MACHINE_NAME="Perlmutter"
+    MACHINE_HOST="NERSC"
+    CPU_VENDOR="AMD"
+    CHIP="Milan"
+    GPU_VENDOR="NVIDIA"
+    GPU_NAME="A100"
+
+# Shared runners
+elif [[ "$HOSTNAME_ENV" =~ runner ]]; then
+    if [[ "${CI_RUNNER_TAGS:-}" =~ nvidia-cc80 ]]; then
+        MACHINE_NAME="Shared GPU Runner (NVIDIA)"
+        MACHINE_HOST="MPCDF"
+        CPU_VENDOR="Intel"
+        CHIP="IceLake"
+        GPU_VENDOR="NVIDIA"
+        GPU_NAME="A100"
+    elif [[ "${CI_RUNNER_TAGS:-}" =~ amd-mi200 ]]; then
+        MACHINE_NAME="Shared GPU Runner (AMD)"
+        MACHINE_HOST="MPCDF"
+        CPU_VENDOR="AMD"
+        CHIP="Genoa"
+        GPU_VENDOR="AMD"
+        GPU_NAME="MI210"
+    else
+        MACHINE_NAME="Shared Runner"
+        MACHINE_HOST="MPCDF"
+        CPU_VENDOR="Intel"
+        CHIP="SkyLake"
+    fi
+
+# User-defined fallback
+elif [[ -n "${GXTCUSERDEFINED:-}" ]]; then
+    MACHINE_NAME="Unspecified"
+
+fi
+
+#######################################
+# Validation
+#######################################
+in_list "$MACHINE_NAME" "${KNOWN_MACHINE_NAMES[@]}" || \
+    warn "Unknown machine: $MACHINE_NAME"
+
+in_list "$MACHINE_HOST" "${KNOWN_MACHINE_HOSTS[@]}" || \
+    fatal "Unknown machine host: $MACHINE_HOST"
+
+in_list "$CPU_VENDOR" "${SUPPORTED_CPU_VENDORS[@]}" || \
+    fatal "Unsupported CPU vendor: $CPU_VENDOR"
+
+in_list "$CHIP" "${SUPPORTED_CPUS[@]}" || \
+    fatal "Unsupported CPU: $CHIP"
+
+in_list "$GPU_VENDOR" "${SUPPORTED_GPU_VENDORS[@]}" || \
+    fatal "Unsupported GPU vendor: $GPU_VENDOR"
+
+in_list "$GPU_NAME" "${SUPPORTED_GPUS[@]}" || \
+    fatal "Unsupported GPU: $GPU_NAME"
+
+#######################################
+# GPU flag
+#######################################
+if [[ "$GPU_VENDOR" == "none" || "$GPU_NAME" == "none" ]]; then
+    GPUS_FOUND=false
+else
+    GPUS_FOUND=true
+fi
+
+#######################################
+# Export results
+#######################################
+export MACHINE_NAME MACHINE_HOST CPU_VENDOR CHIP GPU_VENDOR GPU_NAME GPUS_FOUND MACHINE_HOSTNAME="$HOSTNAME_SYS"
+
+info "Machine: $MACHINE_HOST $MACHINE_NAME"
+info "CPU: $CPU_VENDOR $CHIP"
+info "GPU: $GPU_VENDOR $GPU_NAME (found=$GPUS_FOUND)"
