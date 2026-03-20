@@ -165,6 +165,13 @@ elif [[ "${HPC_SYSTEM:-}" =~ marconi ]]; then
     CPU_VENDOR="Intel"
     CHIP="SkyLake"
 
+# Pitagora
+elif [[ "${HPC_SYSTEM:-}" =~ pitagora ]]; then
+    MACHINE_NAME="Pitagora (DCGP)"
+    MACHINE_HOST="CINECA"
+    CPU_VENDOR="AMD"
+    CHIP="Genoa"
+
 # Vega
 elif [[ "$HOSTNAME_ENV" =~ vega ]]; then
     PARTITION="${PARTITION:-GPU}"
