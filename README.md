@@ -37,3 +37,7 @@ See the script for the full list of supported machine names, hosts, CPUs, and GP
 ## Troubleshooting
 - If the script fails, check the error message for unsupported values.
 - For custom environments, set `GXTCUSERDEFINED` to override detection.
+
+# Acknowledgements
+
+The template for this project is taken from the [confix tool](https://gitlab.mpcdf.mpg.de/phoenix-public/confix) used in [GENE-X](https://gitlab.mpcdf.mpg.de/phoenix-public/genex).
