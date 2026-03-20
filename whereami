@@ -266,21 +266,65 @@ export MACHINE_NAME MACHINE_HOST CPU_VENDOR CHIP GPU_VENDOR GPU_NAME GPUS_FOUND 
 #######################################
 # Summary of detected parameters
 #######################################
-echo ""
-echo "===== whereami parameter summary ====="
-echo ""
+
+# Colors (literal \033 — interpreted by echo -e)
+_C_RESET="\033[0m"
+_C_BOLD="\033[1m"
+_C_TITLE="\033[1;36m"   # bold cyan
+_C_KEY="\033[0;33m"     # yellow
+_C_VAL="\033[0;97m"     # bright white
+_C_SET="\033[1;32m"     # bold green
+_C_DEF="\033[0;90m"     # dark gray
+_C_FRAME="\033[0;36m"   # cyan
+
+# Column widths (visible characters only — no ANSI codes)
+_W_KEY=20   # key column
+_W_VAL=30   # value column
+# Left section inner width:  2 spaces + key + 1 space  = 23
+# Right section inner width: 1 space  + val + 1 space  = 32
+# Total inner (including inner │):                       56
+_W_L=$(( 2 + _W_KEY + 1 ))
+_W_R=$(( 1 + _W_VAL + 1 ))
+_W=$(( _W_L + 1 + _W_R ))
 
 _set_marker() {
     local val="$1" default="$2"
-    [[ "$val" != "$default" ]] && echo "[SET]" || echo "[DEFAULT]"
+    if [[ "$val" != "$default" ]]; then
+        echo -e "${_C_SET}[SET]${_C_RESET}"
+    else
+        echo -e "${_C_DEF}[DEFAULT]${_C_RESET}"
+    fi
 }
 
-printf "  %-20s = %-20s %s\n" "MACHINE_NAME"     "$MACHINE_NAME"     "$(_set_marker "$MACHINE_NAME"     "")"
-printf "  %-20s = %-20s %s\n" "MACHINE_HOST"     "$MACHINE_HOST"     "$(_set_marker "$MACHINE_HOST"     "")"
-printf "  %-20s = %-20s %s\n" "CPU_VENDOR"       "$CPU_VENDOR"       "$(_set_marker "$CPU_VENDOR"       "")"
-printf "  %-20s = %-20s %s\n" "CHIP"             "$CHIP"             "$(_set_marker "$CHIP"             "native")"
-printf "  %-20s = %-20s %s\n" "GPU_VENDOR"       "$GPU_VENDOR"       "$(_set_marker "$GPU_VENDOR"       "none")"
-printf "  %-20s = %-20s %s\n" "GPU_NAME"         "$GPU_NAME"         "$(_set_marker "$GPU_NAME"         "none")"
-printf "  %-20s = %-20s %s\n" "GPUS_FOUND"       "$GPUS_FOUND"       "$(_set_marker "$GPUS_FOUND"       "false")"
-printf "  %-20s = %-20s\n"    "MACHINE_HOSTNAME" "$HOSTNAME_SYS"
+_row() {
+    local key="$1" val="$2" marker="$3"
+    local kp vp
+    # Pad plain strings BEFORE applying color so printf width is exact
+    printf -v kp "%-${_W_KEY}s" "$key"
+    printf -v vp "%-${_W_VAL}s" "$val"
+    echo -e "${_C_FRAME}│${_C_RESET}  ${_C_KEY}${kp}${_C_RESET} ${_C_FRAME}│${_C_RESET} ${_C_VAL}${vp}${_C_RESET} ${_C_FRAME}│${_C_RESET} ${marker}"
+}
+
+# Borders — top has no inner ┬ (title spans full width)
+_border_top="${_C_FRAME}┌$(printf '─%.0s' $(seq 1 $_W))┐${_C_RESET}"
+_border_mid="${_C_FRAME}├$(printf '─%.0s' $(seq 1 $_W_L))┬$(printf '─%.0s' $(seq 1 $_W_R))┤${_C_RESET}"
+_border_bot="${_C_FRAME}└$(printf '─%.0s' $(seq 1 $_W_L))┴$(printf '─%.0s' $(seq 1 $_W_R))┘${_C_RESET}"
+
+# Title padding: "whereami — detected parameters" = 30 visible chars
+_title="whereami — detected parameters"
+_title_pad="$(printf '%*s' $(( _W - 2 - 30 )) '')"
+
+echo ""
+echo -e "$_border_top"
+echo -e "${_C_FRAME}│${_C_RESET}  ${_C_TITLE}${_C_BOLD}${_title}${_title_pad}${_C_RESET}${_C_FRAME}│${_C_RESET}"
+echo -e "$_border_mid"
+_row "MACHINE_NAME"     "$MACHINE_NAME"     "$(_set_marker "$MACHINE_NAME"  "")"
+_row "MACHINE_HOST"     "$MACHINE_HOST"     "$(_set_marker "$MACHINE_HOST"  "")"
+_row "CPU_VENDOR"       "$CPU_VENDOR"       "$(_set_marker "$CPU_VENDOR"    "")"
+_row "CHIP"             "$CHIP"             "$(_set_marker "$CHIP"          "native")"
+_row "GPU_VENDOR"       "$GPU_VENDOR"       "$(_set_marker "$GPU_VENDOR"    "none")"
+_row "GPU_NAME"         "$GPU_NAME"         "$(_set_marker "$GPU_NAME"      "none")"
+_row "GPUS_FOUND"       "$GPUS_FOUND"       "$(_set_marker "$GPUS_FOUND"    "false")"
+_row "MACHINE_HOSTNAME" "$HOSTNAME_SYS"     ""
+echo -e "$_border_bot"
 echo ""
