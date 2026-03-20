@@ -259,6 +259,28 @@ fi
 #######################################
 export MACHINE_NAME MACHINE_HOST CPU_VENDOR CHIP GPU_VENDOR GPU_NAME GPUS_FOUND MACHINE_HOSTNAME="$HOSTNAME_SYS"
 
-info "Machine: $MACHINE_HOST $MACHINE_NAME"
-info "CPU: $CPU_VENDOR $CHIP"
-info "GPU: $GPU_VENDOR $GPU_NAME (found=$GPUS_FOUND)"
+# info "Machine: $MACHINE_HOST $MACHINE_NAME"
+# info "CPU: $CPU_VENDOR $CHIP"
+# info "GPU: $GPU_VENDOR $GPU_NAME (found=$GPUS_FOUND)"
+
+#######################################
+# Summary of detected parameters
+#######################################
+echo ""
+echo "===== whereami parameter summary ====="
+echo ""
+
+_set_marker() {
+    local val="$1" default="$2"
+    [[ "$val" != "$default" ]] && echo "[SET]" || echo "[DEFAULT]"
+}
+
+printf "  %-20s = %-20s %s\n" "MACHINE_NAME"     "$MACHINE_NAME"     "$(_set_marker "$MACHINE_NAME"     "")"
+printf "  %-20s = %-20s %s\n" "MACHINE_HOST"     "$MACHINE_HOST"     "$(_set_marker "$MACHINE_HOST"     "")"
+printf "  %-20s = %-20s %s\n" "CPU_VENDOR"       "$CPU_VENDOR"       "$(_set_marker "$CPU_VENDOR"       "")"
+printf "  %-20s = %-20s %s\n" "CHIP"             "$CHIP"             "$(_set_marker "$CHIP"             "native")"
+printf "  %-20s = %-20s %s\n" "GPU_VENDOR"       "$GPU_VENDOR"       "$(_set_marker "$GPU_VENDOR"       "none")"
+printf "  %-20s = %-20s %s\n" "GPU_NAME"         "$GPU_NAME"         "$(_set_marker "$GPU_NAME"         "none")"
+printf "  %-20s = %-20s %s\n" "GPUS_FOUND"       "$GPUS_FOUND"       "$(_set_marker "$GPUS_FOUND"       "false")"
+printf "  %-20s = %-20s\n"    "MACHINE_HOSTNAME" "$HOSTNAME_SYS"
+echo ""
