@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+# load_modules — load environment modules based on detected machine and profile
+#
+# Usage:
+#   source load_modules [PROFILE_PARTS...] [-f FILE] [-n] [-v]
+#   ./load_modules   [PROFILE_PARTS...] [-f FILE] [-n] [-v]
+#
+# PROFILE_PARTS are joined with underscores to form the profile name:
+#   ./load_modules              → profile "default"
+#   ./load_modules gpu          → profile "gpu"
+#   ./load_modules gpu intel    → tries "gpu_intel", falls back to "gpu", then "default"
+#
+# Options:
+#   -f, --file    FILE      Path to project modules JSON file
+#                           (default: modules.json next to this script)
+#   -n, --dry-run           Print what would be done without executing
+#   -v, --verbose           Show matched config description and extra detail
+#
+# The script sources whereami automatically if machine variables are not
+# already exported in the current environment.
+
+set -euo pipefail
+
+_lm_fatal() { echo "ERROR: $*" >&2; return 1 2>/dev/null || exit 1; }
+_lm_info()  { echo "INFO: $*"; }
+_lm_warn()  { echo "WARNING: $*" >&2; }
+
+# Resolve the directory this script lives in (works when sourced or executed)
+_LM_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+#######################################
+# Argument parsing
+#######################################
+_LM_PROFILE_PARTS=()
+_LM_FILE=""
+_LM_DRY_RUN=false
+_LM_VERBOSE=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -f|--file)     _LM_FILE="$2";    shift 2 ;;
+        -n|--dry-run)  _LM_DRY_RUN=true; shift   ;;
+        -v|--verbose)  _LM_VERBOSE=true; shift   ;;
+        -*) _lm_fatal "Unknown option: $1" ;;
+        *)  _LM_PROFILE_PARTS+=("$1");   shift   ;;
+    esac
+done
+
+# Build profile name from positional args (e.g. "gpu" "intel" → "gpu_intel")
+if [[ ${#_LM_PROFILE_PARTS[@]} -gt 0 ]]; then
+    _LM_PROFILE=$(IFS=_; echo "${_LM_PROFILE_PARTS[*]}")
+else
+    _LM_PROFILE="default"
+fi
+
+#######################################
+# Resolve modules file
+#######################################
+[[ -z "$_LM_FILE" ]] && _LM_FILE="${_LM_SCRIPT_DIR}/modules.json"
+[[ -f "$_LM_FILE" ]] || _lm_fatal "Modules file not found: $_LM_FILE"
+
+#######################################
+# Check dependencies
+#######################################
+command -v jq &>/dev/null || _lm_fatal "jq is required but not found in PATH."
+
+#######################################
+# Detect machine
+# Source whereami if variables are not already in the environment
+#######################################
+if [[ -z "${MACHINE_NAME:-}" ]]; then
+    _LM_WHEREAMI="${_LM_SCRIPT_DIR}/whereami"
+    [[ -f "$_LM_WHEREAMI" ]] || _lm_fatal "whereami not found at: $_LM_WHEREAMI"
+    # shellcheck source=./whereami
+    source "$_LM_WHEREAMI"
+fi
+
+$_LM_VERBOSE && _lm_info "Machine : $MACHINE_NAME"
+$_LM_VERBOSE && _lm_info "Host    : $MACHINE_HOST"
+$_LM_VERBOSE && _lm_info "CPU     : $CPU_VENDOR $CHIP"
+$_LM_VERBOSE && _lm_info "GPU     : $GPU_VENDOR $GPU_NAME (found=$GPUS_FOUND)"
+
+#######################################
+# Resolve profile with fallback
+#
+# "gpu_intel" → "gpu" → "default"
+# Each shorter prefix is tried in order, then "default" as final fallback.
+#######################################
+_LM_RESOLVED_PROFILE=""
+_LM_CANDIDATES=("$_LM_PROFILE")
+_tmp="$_LM_PROFILE"
+while [[ "$_tmp" == *_* ]]; do
+    _tmp="${_tmp%_*}"
+    _LM_CANDIDATES+=("$_tmp")
+done
+[[ "${_LM_CANDIDATES[-1]}" != "default" ]] && _LM_CANDIDATES+=("default")
+
+for _cand in "${_LM_CANDIDATES[@]}"; do
+    if jq -e --arg p "$_cand" '.profiles | has($p)' "$_LM_FILE" > /dev/null 2>&1; then
+        _LM_RESOLVED_PROFILE="$_cand"
+        break
+    fi
+done
+
+[[ -n "$_LM_RESOLVED_PROFILE" ]] || \
+    _lm_fatal "No profile matching '$_LM_PROFILE' (or fallbacks) found in $_LM_FILE. Add a \"default\" profile as a fallback."
+
+[[ "$_LM_RESOLVED_PROFILE" != "$_LM_PROFILE" ]] && \
+    _lm_warn "Profile '$_LM_PROFILE' not found; using '$_LM_RESOLVED_PROFILE' as fallback."
+
+$_LM_VERBOSE && _lm_info "Profile : $_LM_RESOLVED_PROFILE"
+
+#######################################
+# Find first matching config
+#
+# Each config has a "match" field that is either:
+#   - the string "default"         → always matches (use as last fallback)
+#   - an object with a subset of:
+#       machine_name, machine_host, cpu_vendor, chip,
+#       gpu_vendor, gpu_name, gpus_found
+#     All specified keys must equal the detected value.
+#     Omitted keys are treated as wildcards.
+#
+# Configs are tested in order; the first match is used.
+#######################################
+_LM_CONFIG=$(jq -c \
+    --arg profile      "$_LM_RESOLVED_PROFILE" \
+    --arg machine_name "$MACHINE_NAME"   \
+    --arg machine_host "$MACHINE_HOST"   \
+    --arg cpu_vendor   "$CPU_VENDOR"     \
+    --arg chip         "$CHIP"           \
+    --arg gpu_vendor   "$GPU_VENDOR"     \
+    --arg gpu_name     "$GPU_NAME"       \
+    --arg gpus_found   "$GPUS_FOUND"     \
+    '
+    {
+        "machine_name": $machine_name,
+        "machine_host": $machine_host,
+        "cpu_vendor":   $cpu_vendor,
+        "chip":         $chip,
+        "gpu_vendor":   $gpu_vendor,
+        "gpu_name":     $gpu_name,
+        "gpus_found":   $gpus_found
+    } as $detected |
+
+    [
+        .profiles[$profile].configs[] |
+        select(
+            (.match == "default") or
+            (
+                (.match | type) == "object" and
+                (.match | to_entries | all(
+                    .value == $detected[.key]
+                ))
+            )
+        )
+    ] | first
+    ' "$_LM_FILE")
+
+[[ -n "$_LM_CONFIG" && "$_LM_CONFIG" != "null" ]] || \
+    _lm_fatal "No matching config found for profile '$_LM_RESOLVED_PROFILE' on machine '$MACHINE_NAME'. Add a \"default\" entry as a fallback."
+
+_LM_DESC=$(jq -r '.description // "(no description)"' <<< "$_LM_CONFIG")
+$_LM_VERBOSE && _lm_info "Config  : $_LM_DESC"
+
+#######################################
+# Execute module commands
+#######################################
+
+# Wrapper: in dry-run mode just print the command
+_lm_run() {
+    if $_LM_DRY_RUN; then
+        echo "[dry-run] $*"
+    else
+        "$@"
+    fi
+}
+
+# 1. Unload
+while IFS= read -r _mod; do
+    [[ -z "$_mod" ]] && continue
+    _lm_info "module unload $_mod"
+    _lm_run module unload "$_mod"
+done < <(jq -r '.modules_unload // [] | .[]' <<< "$_LM_CONFIG")
+
+# 2. Load
+while IFS= read -r _mod; do
+    [[ -z "$_mod" ]] && continue
+    _lm_info "module load $_mod"
+    _lm_run module load "$_mod"
+done < <(jq -r '.modules_load // [] | .[]' <<< "$_LM_CONFIG")
+
+# 3. Environment variables
+while IFS= read -r _kv; do
+    [[ -z "$_kv" ]] && continue
+    _lm_info "export $_kv"
+    if $_LM_DRY_RUN; then
+        echo "[dry-run] export $_kv"
+    else
+        export "$_kv"
+    fi
+done < <(jq -r '.env // {} | to_entries[] | "\(.key)=\(.value)"' <<< "$_LM_CONFIG")
+
+_lm_info "Modules loaded (profile='$_LM_RESOLVED_PROFILE', machine='$MACHINE_NAME', config='${_LM_DESC}')."
