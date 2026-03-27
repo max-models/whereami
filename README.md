@@ -3,6 +3,19 @@
 ## Overview
 This repository contains the `detect_machine.sh` Bash script for identifying the current HPC system, CPU, and GPU configuration. It supports a variety of supercomputing environments and shared runners.
 
+## Installation
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/max-models/whereami/main/install.sh | bash
+```
+
+This installs `whereami` and `load_modules` into `$HOME/.local/bin` (no sudo required).
+If that directory is not yet on your `PATH`, add this to your `~/.bashrc` or `~/.zshrc`:
+
+```bash
+export PATH="${HOME}/.local/bin:${PATH}"
+```
+
 ## Usage
 You can use the script in two ways:
 
