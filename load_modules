@@ -2,17 +2,20 @@
 # load_modules — load environment modules based on detected machine and profile
 #
 # Usage:
-#   source load_modules [PROFILE_PARTS...] [-f FILE] [-n] [-v]
-#   ./load_modules   [PROFILE_PARTS...] [-f FILE] [-n] [-v]
+#   source load_modules [modules.json] [PROFILE_PARTS...] [-f FILE] [-n] [-v]
+#   ./load_modules   [modules.json] [PROFILE_PARTS...] [-f FILE] [-n] [-v]
 #
+# A positional argument ending in ".json" is treated as the modules file path.
 # PROFILE_PARTS are joined with underscores to form the profile name:
-#   ./load_modules              → profile "default"
-#   ./load_modules gpu          → profile "gpu"
-#   ./load_modules gpu intel    → tries "gpu_intel", falls back to "gpu", then "default"
+#   ./load_modules                        → profile "default"
+#   ./load_modules gpu                    → profile "gpu"
+#   ./load_modules gpu intel              → tries "gpu_intel", falls back to "gpu", then "default"
+#   ./load_modules /path/to/modules.json  → uses that file, profile "default"
+#   ./load_modules /path/to/modules.json gpu → uses that file, profile "gpu"
 #
 # Options:
 #   -f, --file    FILE      Path to project modules JSON file
-#                           (default: modules.json next to this script)
+#                           (default: modules.json in the current directory)
 #   -n, --dry-run           Print what would be done without executing
 #   -v, --verbose           Show matched config description and extra detail
 #
@@ -42,6 +45,7 @@ while [[ $# -gt 0 ]]; do
         -n|--dry-run)  _LM_DRY_RUN=true; shift   ;;
         -v|--verbose)  _LM_VERBOSE=true; shift   ;;
         -*) _lm_fatal "Unknown option: $1" ;;
+        *.json) [[ -z "$_LM_FILE" ]] && _LM_FILE="$1" || _lm_fatal "Multiple JSON files specified: $_LM_FILE and $1"; shift ;;
         *)  _LM_PROFILE_PARTS+=("$1");   shift   ;;
     esac
 done
@@ -56,7 +60,7 @@ fi
 #######################################
 # Resolve modules file
 #######################################
-[[ -z "$_LM_FILE" ]] && _LM_FILE="${_LM_SCRIPT_DIR}/modules.json"
+[[ -z "$_LM_FILE" ]] && _LM_FILE="${PWD}/modules.json"
 [[ -f "$_LM_FILE" ]] || _lm_fatal "Modules file not found: $_LM_FILE"
 
 #######################################
