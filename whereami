@@ -14,6 +14,35 @@ fatal() { echo "ERROR: $*" >&2; exit 1; }
 warn()  { echo "WARNING: $*" >&2; }
 info()  { echo "INFO: $*"; }
 
+_whereami_help() {
+    cat <<'EOF'
+Usage:
+  source whereami [-h]
+  ./whereami      [-h]
+
+Detects the current HPC machine and exports the following variables:
+  MACHINE_NAME      Human-readable machine name  (e.g. "Raven", "LUMI-G")
+  MACHINE_HOST      Site / facility               (e.g. "MPCDF", "CSC")
+  CPU_VENDOR        CPU vendor                    (e.g. "Intel", "AMD")
+  CHIP              CPU microarchitecture         (e.g. "IceLake", "Genoa")
+  GPU_VENDOR        GPU vendor                    (e.g. "NVIDIA", "AMD", "none")
+  GPU_NAME          GPU model                     (e.g. "A100", "MI250X", "none")
+  GPUS_FOUND        "true" or "false"
+  MACHINE_HOSTNAME  System hostname
+
+Options:
+  -h, --help    Show this help message and exit
+EOF
+}
+
+for _arg in "$@"; do
+    case "$_arg" in
+        -h|--help) _whereami_help; return 0 2>/dev/null || exit 0 ;;
+        *) fatal "Unknown option: $_arg" ;;
+    esac
+done
+unset _arg
+
 in_list() {
     local val="$1"; shift
     for x in "$@"; do [[ "$x" == "$val" ]] && return 0; done
