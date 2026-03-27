@@ -44,7 +44,7 @@ KNOWN_MACHINE_NAMES=(
 )
 
 KNOWN_MACHINE_HOSTS=(
-"" "MPCDF" "CSC" "CINECA" "IZUM"
+"" "MPCDF" "CSC" "CINECA" "IZUM" "IPP"
 "Sofia Tech Park" "BSC" "HLRS" "LRZ"
 "IFERC-CSC" "MPG IPP" "IT4Innovations"
 "University of Geneva" "NERSC" "JSC"
@@ -169,6 +169,13 @@ elif [[ "${HPC_SYSTEM:-}" =~ marconi ]]; then
 elif [[ "${HPC_SYSTEM:-}" =~ pitagora ]]; then
     MACHINE_NAME="Pitagora (DCGP)"
     MACHINE_HOST="CINECA"
+    CPU_VENDOR="AMD"
+    CHIP="Genoa"
+
+# TOK
+elif [[ "${HOST:-}" =~ toki ]]; then
+    MACHINE_NAME="TOK"
+    MACHINE_HOST="IPP"
     CPU_VENDOR="AMD"
     CHIP="Genoa"
 
