@@ -39,8 +39,31 @@ _LM_FILE=""
 _LM_DRY_RUN=false
 _LM_VERBOSE=false
 
+_lm_help() {
+    cat <<'EOF'
+Usage:
+  source load_modules [modules.json] [PROFILE_PARTS...] [-f FILE] [-n] [-v] [-h]
+  ./load_modules      [modules.json] [PROFILE_PARTS...] [-f FILE] [-n] [-v] [-h]
+
+A positional argument ending in ".json" is treated as the modules file path.
+PROFILE_PARTS are joined with underscores to form the profile name:
+  ./load_modules                          profile "default", modules.json in CWD
+  ./load_modules gpu                      profile "gpu"
+  ./load_modules gpu intel                tries "gpu_intel", falls back to "gpu", then "default"
+  ./load_modules /path/to/modules.json    uses that file, profile "default"
+  ./load_modules /path/to/modules.json gpu  uses that file, profile "gpu"
+
+Options:
+  -f, --file FILE   Path to modules JSON file (default: modules.json in CWD)
+  -n, --dry-run     Print what would be done without executing
+  -v, --verbose     Show matched config description and extra detail
+  -h, --help        Show this help message and exit
+EOF
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        -h|--help)     _lm_help; return 0 2>/dev/null || exit 0 ;;
         -f|--file)     _LM_FILE="$2";    shift 2 ;;
         -n|--dry-run)  _LM_DRY_RUN=true; shift   ;;
         -v|--verbose)  _LM_VERBOSE=true; shift   ;;
