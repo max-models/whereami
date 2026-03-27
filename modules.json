@@ -1,18 +1,21 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
 
   "_comment": [
     "This is a per-project modules file. Point load_modules at your own copy with -f.",
+    "",
+    "Machines are listed in order — the first entry whose 'match' fits the detected",
+    "environment AND that defines the requested profile (or a fallback) is used.",
     "",
     "Profiles are selected via positional arguments to load_modules:",
     "  ./load_modules              → 'default' profile",
     "  ./load_modules gpu          → 'gpu' profile",
     "  ./load_modules gpu intel    → tries 'gpu_intel', falls back to 'gpu', then 'default'",
     "",
-    "Within each profile, configs are tested in order — the first match wins.",
-    "A config matches when every key in its 'match' object equals the detected",
-    "machine variable of the same name. Omitted keys are wildcards.",
-    "Use 'match': 'default' as the last entry to catch any unmatched machine.",
+    "Machine matching:",
+    "  'match': 'default'  → always matches (use as last-resort fallback)",
+    "  'match': { ... }    → all specified keys must equal the detected value;",
+    "                        omitted keys are wildcards",
     "",
     "Available match keys:",
     "  machine_name  — e.g. 'Raven', 'LUMI-G', 'Pitagora (DCGP)'",
@@ -23,162 +26,139 @@
     "  gpu_name      — e.g. 'A100', 'MI250X', 'none'",
     "  gpus_found    — 'true' or 'false'",
     "",
-    "Available config fields:",
-    "  description    (string)      Human-readable label shown in verbose mode",
+    "Available profile fields:",
     "  modules_unload (string[])    Modules to unload before loading new ones",
     "  modules_load   (string[])    Modules to load",
     "  env            (object)      Environment variables to export"
   ],
 
-  "profiles": {
+  "machines": [
 
-    "default": {
-      "configs": [
-        {
-          "description": "Raven — Intel IceLake + NVIDIA A100",
-          "match": { "machine_name": "Raven" },
+    {
+      "description": "Raven — Intel IceLake + NVIDIA A100",
+      "match": { "machine_name": "Raven" },
+      "profiles": {
+        "default": {
           "modules_unload": ["gcc"],
           "modules_load": ["intel/2024.1", "impi/2021.12", "hdf5-parallel/1.14"],
           "env": { "OMP_NUM_THREADS": "18" }
         },
-        {
-          "description": "Cobra — Intel SkyLake",
-          "match": { "machine_name": "Cobra" },
+        "gpu": {
           "modules_unload": ["gcc"],
-          "modules_load": ["intel/2024.1", "impi/2021.12", "hdf5-parallel/1.14"],
-          "env": { "OMP_NUM_THREADS": "20" }
-        },
-        {
-          "description": "Viper — AMD Genoa",
-          "match": { "machine_host": "MPCDF", "cpu_vendor": "AMD" },
+          "modules_load": ["intel/2024.1", "impi/2021.12", "cuda/12.3", "hdf5-parallel/1.14"],
+          "env": { "OMP_NUM_THREADS": "18", "I_MPI_PIN": "1" }
+        }
+      }
+    },
+
+    {
+      "description": "Viper-CPU — AMD Genoa",
+      "match": { "machine_host": "MPCDF", "cpu_vendor": "AMD" },
+      "profiles": {
+        "default": {
           "modules_load": ["aocc/4.2", "openmpi/5.0", "hdf5-parallel/1.14"],
           "env": { "OMP_NUM_THREADS": "8" }
-        },
-        {
-          "description": "LUMI-G — AMD Trento",
-          "match": { "machine_name": "LUMI-G" },
+        }
+      }
+    },
+
+    {
+      "description": "Viper-GPU — AMD Genoa + MI300A",
+      "match": { "machine_name": "Viper-GPU" },
+      "profiles": {
+        "gpu": {
+          "modules_load": ["aocc/4.2", "openmpi/5.0", "rocm/6.1", "hdf5-parallel/1.14"],
+          "env": { "OMP_NUM_THREADS": "4", "HSA_XNACK": "1" }
+        }
+      }
+    },
+
+    {
+      "description": "LUMI-G — AMD Trento + MI250X",
+      "match": { "machine_name": "LUMI-G" },
+      "profiles": {
+        "default": {
           "modules_load": ["LUMI/24.03", "partition/G", "cray-mpich/8.1.29"]
         },
-        {
-          "description": "LUMI-C — AMD Milan",
-          "match": { "machine_name": "LUMI-C" },
+        "gpu": {
+          "modules_load": ["LUMI/24.03", "partition/G", "cray-mpich/8.1.29", "rocm/5.7.3"],
+          "env": { "MPICH_GPU_SUPPORT_ENABLED": "1" }
+        }
+      }
+    },
+
+    {
+      "description": "LUMI-C — AMD Milan",
+      "match": { "machine_name": "LUMI-C" },
+      "profiles": {
+        "default": {
           "modules_load": ["LUMI/24.03", "partition/C", "cray-mpich/8.1.29"]
-        },
-        {
-          "description": "Pitagora (DCGP) — AMD Genoa",
-          "match": { "machine_name": "Pitagora (DCGP)" },
+        }
+      }
+    },
+
+    {
+      "description": "Pitagora (DCGP) — AMD Genoa",
+      "match": { "machine_name": "Pitagora (DCGP)" },
+      "profiles": {
+        "default": {
           "modules_load": ["aocc/4.2", "openmpi/5.0"],
           "env": { "OMP_NUM_THREADS": "8" }
-        },
-        {
-          "description": "Perlmutter — AMD Milan",
-          "match": { "machine_name": "Perlmutter" },
+        }
+      }
+    },
+
+    {
+      "description": "Perlmutter — AMD Milan + NVIDIA A100",
+      "match": { "machine_name": "Perlmutter" },
+      "profiles": {
+        "default": {
           "modules_load": ["PrgEnv-nvidia", "cray-mpich", "cray-hdf5-parallel"]
         },
-        {
-          "description": "Default — generic fallback",
-          "match": "default",
-          "modules_load": ["gcc/13", "openmpi/4.1", "hdf5-parallel/1.14"]
-        }
-      ]
-    },
-
-    "gpu": {
-      "configs": [
-        {
-          "description": "Raven — Intel IceLake + NVIDIA A100",
-          "match": { "machine_name": "Raven" },
-          "modules_unload": ["gcc"],
-          "modules_load": ["intel/2024.1", "impi/2021.12", "cuda/12.3", "hdf5-parallel/1.14"],
-          "env": { "OMP_NUM_THREADS": "18", "I_MPI_PIN": "1" }
-        },
-        {
-          "description": "Cobra — Intel SkyLake + NVIDIA V100",
-          "match": { "machine_name": "Cobra" },
-          "modules_unload": ["gcc"],
-          "modules_load": ["intel/2024.1", "impi/2021.12", "cuda/11.8", "hdf5-parallel/1.14"],
-          "env": { "OMP_NUM_THREADS": "20" }
-        },
-        {
-          "description": "Viper-GPU — AMD Genoa + MI300A",
-          "match": { "machine_name": "Viper-GPU" },
-          "modules_load": ["aocc/4.2", "openmpi/5.0", "rocm/6.1", "hdf5-parallel/1.14"],
-          "env": { "OMP_NUM_THREADS": "4", "HSA_XNACK": "1" }
-        },
-        {
-          "description": "LUMI-G — AMD Trento + MI250X",
-          "match": { "machine_name": "LUMI-G" },
-          "modules_load": ["LUMI/24.03", "partition/G", "cray-mpich/8.1.29", "rocm/5.7.3"],
-          "env": { "MPICH_GPU_SUPPORT_ENABLED": "1" }
-        },
-        {
-          "description": "Perlmutter — AMD Milan + NVIDIA A100",
-          "match": { "machine_name": "Perlmutter" },
+        "gpu": {
           "modules_load": ["PrgEnv-nvidia", "cray-mpich", "cudatoolkit/23.9", "cray-hdf5-parallel"]
-        },
-        {
-          "description": "Any NVIDIA GPU machine not matched above",
-          "match": { "gpu_vendor": "NVIDIA" },
-          "modules_load": ["gcc/13", "openmpi/4.1", "cuda/12.3"]
-        },
-        {
-          "description": "Any AMD GPU machine not matched above",
-          "match": { "gpu_vendor": "AMD" },
-          "modules_load": ["aocc/4.2", "openmpi/5.0", "rocm/6.1"]
-        },
-        {
-          "description": "Default GPU fallback",
-          "match": "default",
-          "modules_load": ["gcc/13", "openmpi/4.1", "cuda/12.3"]
         }
-      ]
+      }
     },
 
-    "gpu_intel": {
-      "configs": [
-        {
-          "description": "Raven — Intel IceLake + NVIDIA A100",
-          "match": { "machine_name": "Raven" },
-          "modules_unload": ["gcc"],
-          "modules_load": ["intel/2024.1", "impi/2021.12", "cuda/12.3", "hdf5-parallel/1.14"],
-          "env": { "OMP_NUM_THREADS": "18", "I_MPI_PIN": "1" }
+    {
+      "description": "Any NVIDIA GPU machine not matched above",
+      "match": { "gpu_vendor": "NVIDIA" },
+      "profiles": {
+        "gpu": {
+          "modules_load": ["gcc/13", "openmpi/4.1", "cuda/12.3"]
+        }
+      }
+    },
+
+    {
+      "description": "Any AMD GPU machine not matched above",
+      "match": { "gpu_vendor": "AMD" },
+      "profiles": {
+        "gpu": {
+          "modules_load": ["aocc/4.2", "openmpi/5.0", "rocm/6.1"]
+        }
+      }
+    },
+
+    {
+      "description": "Generic fallback",
+      "match": "default",
+      "profiles": {
+        "default": {
+          "modules_load": ["gcc/13", "openmpi/4.1", "hdf5-parallel/1.14"]
         },
-        {
-          "description": "Cobra — Intel SkyLake + NVIDIA V100",
-          "match": { "machine_name": "Cobra" },
-          "modules_unload": ["gcc"],
-          "modules_load": ["intel/2024.1", "impi/2021.12", "cuda/11.8", "hdf5-parallel/1.14"],
-          "env": { "OMP_NUM_THREADS": "20" }
+        "gpu": {
+          "modules_load": ["gcc/13", "openmpi/4.1", "cuda/12.3"]
         },
-        {
-          "description": "Default — Intel + NVIDIA fallback",
-          "match": "default",
+        "gpu_intel": {
           "modules_load": ["intel/2024.1", "impi/2021.12", "cuda/12.3"]
-        }
-      ]
-    },
-
-    "gpu_amd": {
-      "configs": [
-        {
-          "description": "Viper-GPU — AMD Genoa + MI300A",
-          "match": { "machine_name": "Viper-GPU" },
-          "modules_load": ["aocc/4.2", "openmpi/5.0", "rocm/6.1", "hdf5-parallel/1.14"],
-          "env": { "OMP_NUM_THREADS": "4", "HSA_XNACK": "1" }
         },
-        {
-          "description": "LUMI-G — AMD Trento + MI250X",
-          "match": { "machine_name": "LUMI-G" },
-          "modules_load": ["LUMI/24.03", "partition/G", "cray-mpich/8.1.29", "rocm/5.7.3"],
-          "env": { "MPICH_GPU_SUPPORT_ENABLED": "1" }
-        },
-        {
-          "description": "Default — AMD + ROCm fallback",
-          "match": "default",
+        "gpu_amd": {
           "modules_load": ["aocc/4.2", "openmpi/5.0", "rocm/6.1"]
         }
-      ]
+      }
     }
 
-  }
+  ]
 }
