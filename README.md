@@ -1,7 +1,8 @@
 # whereami
 
-## Overview
-This repository contains the `detect_machine.sh` Bash script for identifying the current HPC system, CPU, and GPU configuration. It supports a variety of supercomputing environments and shared runners.
+Detects the current HPC machine and exports environment variables describing it.
+Comes with `load_modules`, a companion script that reads a `modules.json` file
+and loads the right environment modules for the detected machine.
 
 ## Installation
 
@@ -9,48 +10,131 @@ This repository contains the `detect_machine.sh` Bash script for identifying the
 curl -fsSL https://raw.githubusercontent.com/max-models/whereami/main/install.sh | bash
 ```
 
-This installs `whereami` and `load_modules` into `$HOME/.local/bin` (no sudo required).
-If that directory is not yet on your `PATH`, add this to your `~/.bashrc` or `~/.zshrc`:
+Installs `whereami` and `load_modules` into `$HOME/.local/bin` (no sudo required).
+If that directory is not yet on your `PATH`, add this to your shell config:
 
 ```bash
 export PATH="${HOME}/.local/bin:${PATH}"
 ```
 
-## Usage
-You can use the script in two ways:
+---
 
-### 1. Source the script
-This will export environment variables describing the detected machine:
+## `whereami`
 
-```bash
-source whereami
-```
-
-### 2. Run the script directly
-This will print information about the detected machine:
+Identifies the current HPC system, CPU, and GPU.
 
 ```bash
-./whereami
+source whereami      # detect and export variables into the current shell
+./whereami           # detect and print a summary table
+whereami --help      # show usage
 ```
 
-## Exported Variables
-After sourcing, the following environment variables are available:
-- `MACHINE_NAME`: Name of the detected machine
-- `MACHINE_HOST`: Host organization
-- `CPU_VENDOR`: CPU vendor
-- `CHIP`: CPU model
-- `GPU_VENDOR`: GPU vendor
-- `GPU_NAME`: GPU model
-- `GPUS_FOUND`: Whether a GPU was detected
-- `MACHINE_HOSTNAME`: System hostname
+After sourcing, the following variables are available in your environment:
 
-## Supported Machines
-See the script for the full list of supported machine names, hosts, CPUs, and GPUs.
+| Variable           | Example values                          |
+|--------------------|-----------------------------------------|
+| `MACHINE_NAME`     | `Raven`, `LUMI-G`, `Perlmutter`         |
+| `MACHINE_HOST`     | `MPCDF`, `CSC`, `NERSC`                 |
+| `CPU_VENDOR`       | `Intel`, `AMD`                          |
+| `CHIP`             | `IceLake`, `Genoa`, `Milan`             |
+| `GPU_VENDOR`       | `NVIDIA`, `AMD`, `none`                 |
+| `GPU_NAME`         | `A100`, `MI250X`, `none`                |
+| `GPUS_FOUND`       | `true`, `false`                         |
+| `MACHINE_HOSTNAME` | system hostname                         |
 
-## Troubleshooting
-- If the script fails, check the error message for unsupported values.
-- For custom environments, set `GXTCUSERDEFINED` to override detection.
+---
 
-# Acknowledgements
+## `load_modules`
+
+Reads a `modules.json` file and loads the right modules for the detected machine.
+Calls `whereami` automatically if the machine variables are not already set.
+
+```bash
+source load_modules                         # use modules.json in CWD, profile "default"
+source load_modules gpu                     # profile "gpu"
+source load_modules gpu intel               # tries "gpu_intel", falls back to "gpu", "default"
+source load_modules /path/to/modules.json   # use a specific file, profile "default"
+source load_modules /path/to/modules.json gpu  # specific file + profile
+source load_modules -f /path/to/modules.json gpu  # same via -f flag
+source load_modules --dry-run gpu           # print what would run, don't execute
+source load_modules --verbose               # show which machine entry matched
+load_modules --help                         # show usage
+```
+
+### `modules.json` format
+
+The file uses a **machine-first** layout: machines are listed in order and the
+first entry whose `match` fits the detected environment is used.  Within that
+entry the requested profile (or the nearest fallback) is selected.
+
+```json
+{
+  "schema_version": 3,
+  "machines": [
+    {
+      "description": "Raven — Intel IceLake + NVIDIA A100",
+      "match": { "machine_name": "Raven" },
+      "profiles": {
+        "default": {
+          "modules_unload": ["gcc"],
+          "modules_load":   ["intel/2024.1", "impi/2021.12", "hdf5-parallel/1.14"],
+          "env":            { "OMP_NUM_THREADS": "18" }
+        },
+        "gpu": {
+          "modules_unload": ["gcc"],
+          "modules_load":   ["intel/2024.1", "impi/2021.12", "cuda/12.3", "hdf5-parallel/1.14"],
+          "env":            { "OMP_NUM_THREADS": "18", "I_MPI_PIN": "1" }
+        }
+      }
+    },
+    {
+      "description": "Generic fallback",
+      "match": "default",
+      "profiles": {
+        "default": {
+          "modules_load": ["gcc/13", "openmpi/4.1", "hdf5-parallel/1.14"]
+        }
+      }
+    }
+  ]
+}
+```
+
+#### `match` field
+
+| Value | Meaning |
+|---|---|
+| `"default"` | Always matches — use as last-resort fallback |
+| `{ "machine_name": "Raven" }` | Matches when `MACHINE_NAME == "Raven"` |
+| `{ "machine_host": "MPCDF", "cpu_vendor": "AMD" }` | All specified keys must match; omitted keys are wildcards |
+
+Available keys: `machine_name`, `machine_host`, `cpu_vendor`, `chip`, `gpu_vendor`, `gpu_name`, `gpus_found`.
+
+#### Profile fields
+
+| Field | Type | Description |
+|---|---|---|
+| `modules_unload` | `string[]` | Modules to unload before loading |
+| `modules_load` | `string[]` | Modules to load |
+| `env` | `object` | Environment variables to export |
+
+#### Profile fallback
+
+If the requested profile is not defined in the matched machine, shorter prefixes
+are tried before giving up:
+
+```
+gpu_intel  →  gpu  →  default
+```
+
+If the matched machine has none of the candidates, the search continues to the
+next machine in the list.
+
+A `modules.json` covering several machines is included in this repository as a
+starting point — copy and adapt it for your own project.
+
+---
+
+## Acknowledgements
 
 The template for this project is taken from the [confix tool](https://gitlab.mpcdf.mpg.de/phoenix-public/confix) used in [GENE-X](https://gitlab.mpcdf.mpg.de/phoenix-public/genex).

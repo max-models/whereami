@@ -2,25 +2,32 @@
 # load_modules — load environment modules based on detected machine and profile
 #
 # Usage:
-#   source load_modules [modules.json] [PROFILE_PARTS...] [-f FILE] [-n] [-v]
-#   ./load_modules   [modules.json] [PROFILE_PARTS...] [-f FILE] [-n] [-v]
+#   source load_modules [modules.json] [PROFILE_PARTS...] [-f FILE] [-n] [-v] [-h]
+#   ./load_modules      [modules.json] [PROFILE_PARTS...] [-f FILE] [-n] [-v] [-h]
 #
-# A positional argument ending in ".json" is treated as the modules file path.
-# PROFILE_PARTS are joined with underscores to form the profile name:
-#   ./load_modules                        → profile "default"
-#   ./load_modules gpu                    → profile "gpu"
-#   ./load_modules gpu intel              → tries "gpu_intel", falls back to "gpu", then "default"
-#   ./load_modules /path/to/modules.json  → uses that file, profile "default"
-#   ./load_modules /path/to/modules.json gpu → uses that file, profile "gpu"
+# Reads a modules.json file (machine-first format), detects the current machine
+# via whereami, and runs the appropriate module load/unload commands and exports.
 #
-# Options:
-#   -f, --file    FILE      Path to project modules JSON file
-#                           (default: modules.json in the current directory)
-#   -n, --dry-run           Print what would be done without executing
-#   -v, --verbose           Show matched config description and extra detail
+# FILE RESOLUTION
+#   A positional argument ending in ".json" is used as the modules file.
+#   If none is given, modules.json in the current working directory is used.
+#   The -f flag overrides both.
 #
-# The script sources whereami automatically if machine variables are not
-# already exported in the current environment.
+# PROFILE SELECTION
+#   Remaining positional arguments are joined with underscores to form the
+#   profile name.  If a profile is not found in the matched machine, shorter
+#   prefixes are tried, then "default":
+#     ./load_modules                    → profile "default"
+#     ./load_modules gpu                → profile "gpu"
+#     ./load_modules gpu intel          → tries "gpu_intel", "gpu", "default"
+#
+# OPTIONS
+#   -f, --file FILE   Path to modules JSON file (default: modules.json in CWD)
+#   -n, --dry-run     Print what would be done without executing
+#   -v, --verbose     Show matched machine description and extra detail
+#   -h, --help        Show this help message and exit
+#
+# The script sources whereami automatically if MACHINE_NAME is not already set.
 
 set -euo pipefail
 
@@ -56,7 +63,7 @@ PROFILE_PARTS are joined with underscores to form the profile name:
 Options:
   -f, --file FILE   Path to modules JSON file (default: modules.json in CWD)
   -n, --dry-run     Print what would be done without executing
-  -v, --verbose     Show matched config description and extra detail
+  -v, --verbose     Show matched machine description and extra detail
   -h, --help        Show this help message and exit
 EOF
 }
@@ -108,12 +115,12 @@ $_LM_VERBOSE && _lm_info "CPU     : $CPU_VENDOR $CHIP"
 $_LM_VERBOSE && _lm_info "GPU     : $GPU_VENDOR $GPU_NAME (found=$GPUS_FOUND)"
 
 #######################################
-# Resolve profile with fallback
+# Build profile candidate list
 #
-# "gpu_intel" → "gpu" → "default"
-# Each shorter prefix is tried in order, then "default" as final fallback.
+# "gpu_intel" → ["gpu_intel", "gpu", "default"]
+# Machines are tried in order; the first that matches the environment AND
+# defines one of the candidate profiles (earliest wins) is used.
 #######################################
-_LM_RESOLVED_PROFILE=""
 _LM_CANDIDATES=("$_LM_PROFILE")
 _tmp="$_LM_PROFILE"
 while [[ "$_tmp" == *_* ]]; do
@@ -121,37 +128,21 @@ while [[ "$_tmp" == *_* ]]; do
     _LM_CANDIDATES+=("$_tmp")
 done
 [[ "${_LM_CANDIDATES[-1]}" != "default" ]] && _LM_CANDIDATES+=("default")
-
-for _cand in "${_LM_CANDIDATES[@]}"; do
-    if jq -e --arg p "$_cand" '.profiles | has($p)' "$_LM_FILE" > /dev/null 2>&1; then
-        _LM_RESOLVED_PROFILE="$_cand"
-        break
-    fi
-done
-
-[[ -n "$_LM_RESOLVED_PROFILE" ]] || \
-    _lm_fatal "No profile matching '$_LM_PROFILE' (or fallbacks) found in $_LM_FILE. Add a \"default\" profile as a fallback."
-
-[[ "$_LM_RESOLVED_PROFILE" != "$_LM_PROFILE" ]] && \
-    _lm_warn "Profile '$_LM_PROFILE' not found; using '$_LM_RESOLVED_PROFILE' as fallback."
-
-$_LM_VERBOSE && _lm_info "Profile : $_LM_RESOLVED_PROFILE"
+_LM_CANDIDATES_JSON=$(printf '%s\n' "${_LM_CANDIDATES[@]}" | jq -R . | jq -s .)
 
 #######################################
-# Find first matching config
+# Find first matching machine + profile
 #
-# Each config has a "match" field that is either:
-#   - the string "default"         → always matches (use as last fallback)
-#   - an object with a subset of:
-#       machine_name, machine_host, cpu_vendor, chip,
-#       gpu_vendor, gpu_name, gpus_found
-#     All specified keys must equal the detected value.
-#     Omitted keys are treated as wildcards.
+# Each machine has a "match" field that is either:
+#   - the string "default"  → always matches (use as last-resort fallback)
+#   - an object             → all specified keys must equal the detected value;
+#                             omitted keys are wildcards
 #
-# Configs are tested in order; the first match is used.
+# Machines are tested in order; within a matching machine the first candidate
+# profile that is defined is used.  If a machine matches but has none of the
+# candidate profiles, the search continues to the next machine.
 #######################################
-_LM_CONFIG=$(jq -c \
-    --arg profile      "$_LM_RESOLVED_PROFILE" \
+_LM_RESULT=$(jq -c \
     --arg machine_name "$MACHINE_NAME"   \
     --arg machine_host "$MACHINE_HOST"   \
     --arg cpu_vendor   "$CPU_VENDOR"     \
@@ -159,6 +150,7 @@ _LM_CONFIG=$(jq -c \
     --arg gpu_vendor   "$GPU_VENDOR"     \
     --arg gpu_name     "$GPU_NAME"       \
     --arg gpus_found   "$GPUS_FOUND"     \
+    --argjson candidates "$_LM_CANDIDATES_JSON" \
     '
     {
         "machine_name": $machine_name,
@@ -170,8 +162,8 @@ _LM_CONFIG=$(jq -c \
         "gpus_found":   $gpus_found
     } as $detected |
 
-    [
-        .profiles[$profile].configs[] |
+    first(
+        .machines[] |
         select(
             (.match == "default") or
             (
@@ -180,15 +172,31 @@ _LM_CONFIG=$(jq -c \
                     .value == $detected[.key]
                 ))
             )
-        )
-    ] | first
+        ) |
+        . as $machine |
+        ($candidates | map(select($machine.profiles | has(.))) | .[0]) |
+        select(. != null) |
+        . as $prof |
+        {
+            profile:      $prof,
+            config:       $machine.profiles[$prof],
+            machine_desc: ($machine.description // "(no description)")
+        }
+    ) // null
     ' "$_LM_FILE")
 
-[[ -n "$_LM_CONFIG" && "$_LM_CONFIG" != "null" ]] || \
-    _lm_fatal "No matching config found for profile '$_LM_RESOLVED_PROFILE' on machine '$MACHINE_NAME'. Add a \"default\" entry as a fallback."
+[[ -n "$_LM_RESULT" && "$_LM_RESULT" != "null" ]] || \
+    _lm_fatal "No matching machine+profile found for '$_LM_PROFILE' on machine '$MACHINE_NAME'. Add a \"default\" machine entry as a fallback."
 
-_LM_DESC=$(jq -r '.description // "(no description)"' <<< "$_LM_CONFIG")
-$_LM_VERBOSE && _lm_info "Config  : $_LM_DESC"
+_LM_RESOLVED_PROFILE=$(jq -r '.profile'      <<< "$_LM_RESULT")
+_LM_CONFIG=$(          jq -c '.config'        <<< "$_LM_RESULT")
+_LM_MACHINE_DESC=$(    jq -r '.machine_desc'  <<< "$_LM_RESULT")
+
+[[ "$_LM_RESOLVED_PROFILE" != "$_LM_PROFILE" ]] && \
+    _lm_warn "Profile '$_LM_PROFILE' not found; using '$_LM_RESOLVED_PROFILE' as fallback."
+
+$_LM_VERBOSE && _lm_info "Matched : $_LM_MACHINE_DESC"
+$_LM_VERBOSE && _lm_info "Profile : $_LM_RESOLVED_PROFILE"
 
 #######################################
 # Execute module commands
@@ -228,4 +236,4 @@ while IFS= read -r _kv; do
     fi
 done < <(jq -r '.env // {} | to_entries[] | "\(.key)=\(.value)"' <<< "$_LM_CONFIG")
 
-_lm_info "Modules loaded (profile='$_LM_RESOLVED_PROFILE', machine='$MACHINE_NAME', config='${_LM_DESC}')."
+_lm_info "Modules loaded (profile='$_LM_RESOLVED_PROFILE', machine='$MACHINE_NAME', matched='${_LM_MACHINE_DESC}')."

@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# DetectMachine - Bash version
+# whereami — detect the current HPC machine and export environment variables
+#
 # Usage:
-#   source detect_machine.sh
-# or
-#   ./detect_machine.sh
+#   source whereami [-h]
+#   ./whereami      [-h]
+#
+# Exports: MACHINE_NAME, MACHINE_HOST, CPU_VENDOR, CHIP,
+#          GPU_VENDOR, GPU_NAME, GPUS_FOUND, MACHINE_HOSTNAME
 
 set -euo pipefail
 
