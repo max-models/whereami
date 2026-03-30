@@ -8,7 +8,7 @@ set -euo pipefail
 
 REPO_RAW="https://raw.githubusercontent.com/max-models/whereami/main"
 INSTALL_DIR="${HOME}/.local/bin"
-FILES=(whereami load_modules)
+FILES=(whereami load_modules edit_modules)
 
 # Colors
 _C_RESET="\033[0m"

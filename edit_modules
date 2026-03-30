@@ -1,0 +1,301 @@
+#!/usr/bin/env bash
+# edit_modules — interactively create or update a machine profile in modules.json
+#
+# Usage:
+#   ./edit_modules [PROFILE_PARTS...] [-f FILE] [-n] [-h]
+#
+# Detects the current machine via whereami and lets you interactively
+# create or update the profile entry in modules.json for that machine.
+#
+# PROFILE_PARTS are joined with underscores (same convention as load_modules):
+#   ./edit_modules              → profile "default"
+#   ./edit_modules gpu          → profile "gpu"
+#   ./edit_modules gpu intel    → profile "gpu_intel"
+#
+# OPTIONS
+#   -f, --file FILE   modules JSON file (default: modules.json in CWD)
+#   -n, --dry-run     show the updated JSON without writing to disk
+#   -h, --help        show this help message and exit
+
+set -euo pipefail
+
+_em_fatal() { echo "ERROR: $*" >&2; exit 1; }
+_em_warn()  { echo "WARNING: $*" >&2; }
+
+_EM_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ─── Colors ───────────────────────────────────────────────────────────────────
+_C_RESET="\033[0m"
+_C_BOLD="\033[1m"
+_C_TITLE="\033[1;36m"
+_C_KEY="\033[0;33m"
+_C_VAL="\033[0;97m"
+_C_FRAME="\033[0;36m"
+_C_OK="\033[1;32m"
+_C_DIM="\033[0;90m"
+_C_WARN="\033[1;33m"
+
+# ─── Help ─────────────────────────────────────────────────────────────────────
+_em_help() {
+    cat <<'EOF'
+Usage:
+  ./edit_modules [PROFILE_PARTS...] [-f FILE] [-n] [-h]
+
+Detects the current machine and lets you interactively create or update
+a profile entry in modules.json for that machine.
+
+Profile parts are joined with underscores:
+  ./edit_modules              profile "default"
+  ./edit_modules gpu          profile "gpu"
+  ./edit_modules gpu intel    profile "gpu_intel"
+
+Options:
+  -f, --file FILE   Path to modules JSON file (default: modules.json in CWD)
+  -n, --dry-run     Show the updated JSON without writing to disk
+  -h, --help        Show this help message and exit
+EOF
+}
+
+# ─── Argument parsing ─────────────────────────────────────────────────────────
+_EM_PROFILE_PARTS=()
+_EM_FILE=""
+_EM_DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)    _em_help; exit 0 ;;
+        -f|--file)    _EM_FILE="$2"; shift 2 ;;
+        -n|--dry-run) _EM_DRY_RUN=true; shift ;;
+        -*)           _em_fatal "Unknown option: $1" ;;
+        *.json)       [[ -z "$_EM_FILE" ]] && _EM_FILE="$1" \
+                          || _em_fatal "Multiple JSON files: $_EM_FILE and $1"; shift ;;
+        *)            _EM_PROFILE_PARTS+=("$1"); shift ;;
+    esac
+done
+
+if [[ ${#_EM_PROFILE_PARTS[@]} -gt 0 ]]; then
+    _EM_PROFILE=$(IFS=_; echo "${_EM_PROFILE_PARTS[*]}")
+else
+    _EM_PROFILE="default"
+fi
+
+[[ -z "$_EM_FILE" ]] && _EM_FILE="${PWD}/modules.json"
+
+# ─── Dependencies ─────────────────────────────────────────────────────────────
+command -v jq &>/dev/null || _em_fatal "jq is required but not found in PATH."
+
+# ─── Detect machine ───────────────────────────────────────────────────────────
+if [[ -z "${MACHINE_NAME:-}" ]]; then
+    _EM_WHEREAMI="${_EM_SCRIPT_DIR}/whereami"
+    [[ -f "$_EM_WHEREAMI" ]] || _em_fatal "whereami not found at: $_EM_WHEREAMI"
+    # shellcheck source=./whereami
+    source "$_EM_WHEREAMI"
+fi
+
+# ─── Load current JSON ────────────────────────────────────────────────────────
+if [[ -f "$_EM_FILE" ]]; then
+    _EM_JSON="$(<"$_EM_FILE")"
+    jq -e . >/dev/null 2>&1 <<< "$_EM_JSON" || _em_fatal "Invalid JSON in: $_EM_FILE"
+else
+    _EM_JSON='{"schema_version": 3, "machines": []}'
+    _em_warn "File not found — will create: $_EM_FILE"
+fi
+
+# ─── Look up existing entry for this machine ──────────────────────────────────
+_EM_CUR_UNLOAD=""
+_EM_CUR_LOAD=""
+_EM_CUR_ENV_PAIRS=()
+_EM_ENTRY_EXISTS=false
+_EM_PROFILE_EXISTS=false
+
+_EM_ENTRY=$(jq -c --arg mn "$MACHINE_NAME" \
+    'first(.machines[] |
+        select((.match | type) == "object" and .match.machine_name == $mn)
+    ) // null' <<< "$_EM_JSON")
+
+if [[ "$_EM_ENTRY" != "null" ]]; then
+    _EM_ENTRY_EXISTS=true
+    _EM_CUR_CFG=$(jq -c --arg p "$_EM_PROFILE" '.profiles[$p] // null' <<< "$_EM_ENTRY")
+    if [[ "$_EM_CUR_CFG" != "null" ]]; then
+        _EM_PROFILE_EXISTS=true
+        _EM_CUR_UNLOAD=$(jq -r '.modules_unload // [] | join(" ")' <<< "$_EM_CUR_CFG")
+        _EM_CUR_LOAD=$(  jq -r '.modules_load   // [] | join(" ")' <<< "$_EM_CUR_CFG")
+        while IFS= read -r _kv; do
+            [[ -n "$_kv" ]] && _EM_CUR_ENV_PAIRS+=("$_kv")
+        done < <(jq -r '.env // {} | to_entries[] | "\(.key)=\(.value)"' <<< "$_EM_CUR_CFG")
+    fi
+fi
+
+# ─── Header ───────────────────────────────────────────────────────────────────
+echo ""
+echo -e "${_C_FRAME}┌──────────────────────────────────────────────┐${_C_RESET}"
+echo -e "${_C_FRAME}│${_C_RESET}  ${_C_TITLE}${_C_BOLD}edit_modules — update modules.json${_C_RESET}         ${_C_FRAME}│${_C_RESET}"
+echo -e "${_C_FRAME}└──────────────────────────────────────────────┘${_C_RESET}"
+echo ""
+_EM_HOST_LABEL="${MACHINE_HOST:-}"
+echo -e "  ${_C_KEY}Machine${_C_RESET} : ${_C_VAL}${MACHINE_NAME}${_C_RESET}${_EM_HOST_LABEL:+  ${_C_DIM}(${_EM_HOST_LABEL})${_C_RESET}}"
+echo -e "  ${_C_KEY}Profile${_C_RESET} : ${_C_VAL}${_EM_PROFILE}${_C_RESET}"
+echo -e "  ${_C_KEY}File${_C_RESET}    : ${_C_DIM}${_EM_FILE}${_C_RESET}"
+echo ""
+
+if $_EM_PROFILE_EXISTS; then
+    echo -e "  ${_C_DIM}Current '${_EM_PROFILE}' profile:${_C_RESET}"
+    if [[ -n "$_EM_CUR_UNLOAD" ]]; then
+        echo -e "    ${_C_DIM}modules_unload${_C_RESET} : ${_C_VAL}${_EM_CUR_UNLOAD}${_C_RESET}"
+    else
+        echo -e "    ${_C_DIM}modules_unload${_C_RESET} : ${_C_DIM}(none)${_C_RESET}"
+    fi
+    if [[ -n "$_EM_CUR_LOAD" ]]; then
+        echo -e "    ${_C_DIM}modules_load  ${_C_RESET} : ${_C_VAL}${_EM_CUR_LOAD}${_C_RESET}"
+    else
+        echo -e "    ${_C_DIM}modules_load  ${_C_RESET} : ${_C_DIM}(none)${_C_RESET}"
+    fi
+    if [[ ${#_EM_CUR_ENV_PAIRS[@]} -gt 0 ]]; then
+        echo -e "    ${_C_DIM}env           ${_C_RESET} : ${_C_VAL}${_EM_CUR_ENV_PAIRS[*]}${_C_RESET}"
+    else
+        echo -e "    ${_C_DIM}env           ${_C_RESET} : ${_C_DIM}(none)${_C_RESET}"
+    fi
+elif $_EM_ENTRY_EXISTS; then
+    echo -e "  ${_C_WARN}Machine entry found but no '${_EM_PROFILE}' profile — will add it.${_C_RESET}"
+else
+    echo -e "  ${_C_WARN}No entry for '${MACHINE_NAME}' — a new entry will be created.${_C_RESET}"
+fi
+
+echo ""
+echo -e "  ${_C_DIM}Press Enter to keep the current value. Clear the field to remove it.${_C_RESET}"
+echo ""
+
+# ─── read helper ──────────────────────────────────────────────────────────────
+# Bash 4+ supports read -i to pre-populate the readline buffer for in-line editing.
+# Bash 3.x (macOS default) does not; fall back to showing the default in brackets.
+_em_read() {
+    # $1=label  $2=default  $3=variable-name-to-set
+    local _lbl="$1" _def="$2" _var="$3"
+    # Pre-seed the variable with the default so a bare Enter keeps the current value.
+    printf -v "$_var" '%s' "$_def"
+    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+        IFS= read -e -r -i "$_def" -p "  ${_lbl}: " "$_var" || true
+    else
+        printf "  %s [%s]: " "$_lbl" "$_def"
+        local _input=""
+        IFS= read -r _input || true
+        if [[ -n "$_input" ]]; then printf -v "$_var" '%s' "$_input"; fi
+    fi
+}
+
+# ─── Interactive prompts ──────────────────────────────────────────────────────
+_em_read "modules_unload (space-separated)" "$_EM_CUR_UNLOAD" _EM_NEW_UNLOAD
+_em_read "modules_load   (space-separated)" "$_EM_CUR_LOAD"   _EM_NEW_LOAD
+
+echo ""
+echo -e "  ${_C_DIM}Environment variables — edit to update, clear the line to remove:${_C_RESET}"
+
+_EM_NEW_ENV_PAIRS=()
+
+if [[ ${#_EM_CUR_ENV_PAIRS[@]} -gt 0 ]]; then
+    for _kv in "${_EM_CUR_ENV_PAIRS[@]}"; do
+        _em_read "  env" "$_kv" _EM_TMP_KV
+        if [[ -n "${_EM_TMP_KV:-}" ]]; then _EM_NEW_ENV_PAIRS+=("$_EM_TMP_KV"); fi
+    done
+fi
+
+while true; do
+    _em_read "  add env var (KEY=VALUE, empty to finish)" "" _EM_TMP_KV
+    [[ -z "${_EM_TMP_KV:-}" ]] && break
+    if [[ "$_EM_TMP_KV" != *=* ]]; then
+        echo -e "  ${_C_WARN}Expected KEY=VALUE format — got: ${_EM_TMP_KV}${_C_RESET}"
+        continue
+    fi
+    _EM_NEW_ENV_PAIRS+=("$_EM_TMP_KV")
+done
+
+# ─── Build new config JSON ────────────────────────────────────────────────────
+_EM_UNLOAD_JSON=$(jq -n --arg s "$_EM_NEW_UNLOAD" \
+    '[$s | split(" ") | .[] | select(length > 0)]')
+_EM_LOAD_JSON=$(jq -n --arg s "$_EM_NEW_LOAD" \
+    '[$s | split(" ") | .[] | select(length > 0)]')
+
+_EM_ENV_JSON='{}'
+for _kv in "${_EM_NEW_ENV_PAIRS[@]+"${_EM_NEW_ENV_PAIRS[@]}"}"; do
+    _EM_ENV_JSON=$(jq -n \
+        --argjson base "$_EM_ENV_JSON" \
+        --arg k "${_kv%%=*}" \
+        --arg v "${_kv#*=}" \
+        '$base + {($k): $v}')
+done
+
+_EM_NEW_CFG=$(jq -n \
+    --argjson unload "$_EM_UNLOAD_JSON" \
+    --argjson load   "$_EM_LOAD_JSON" \
+    --argjson env    "$_EM_ENV_JSON" \
+    '(if ($unload | length) > 0 then {modules_unload: $unload} else {} end)
+     + (if ($load   | length) > 0 then {modules_load:   $load}   else {} end)
+     + (if ($env | length)    > 0 then {env: $env}               else {} end)')
+
+# ─── Preview ──────────────────────────────────────────────────────────────────
+echo ""
+echo -e "  ${_C_DIM}New config for '${MACHINE_NAME}' / profile '${_EM_PROFILE}':${_C_RESET}"
+jq . <<< "$_EM_NEW_CFG" | while IFS= read -r _line; do echo "    $_line"; done
+
+# ─── Dry-run short-circuit ────────────────────────────────────────────────────
+if $_EM_DRY_RUN; then
+    echo ""
+    echo -e "  ${_C_DIM}(dry-run — file not modified)${_C_RESET}"
+    echo ""
+    exit 0
+fi
+
+# ─── Confirm ─────────────────────────────────────────────────────────────────
+echo ""
+printf "  Save to %s? [Y/n]: " "$_EM_FILE"
+IFS= read -r _EM_CONFIRM || true
+case "${_EM_CONFIRM:-y}" in
+    [Yy]*|"") ;;
+    *) echo "  Aborted."; echo ""; exit 0 ;;
+esac
+
+# ─── Apply update ─────────────────────────────────────────────────────────────
+_EM_DESC="${MACHINE_NAME} — ${CPU_VENDOR} ${CHIP}"
+[[ "${GPU_NAME:-none}" != "none" ]] && _EM_DESC+=" + ${GPU_VENDOR} ${GPU_NAME}"
+
+_EM_UPDATED=$(jq \
+    --arg  mn   "$MACHINE_NAME" \
+    --arg  prof "$_EM_PROFILE" \
+    --arg  desc "$_EM_DESC" \
+    --argjson cfg "$_EM_NEW_CFG" \
+    '
+    # Index of first entry whose match.machine_name == $mn
+    ([ .machines | to_entries[] |
+        select((.value.match | type) == "object" and
+               .value.match.machine_name == $mn) | .key
+    ] | .[0]) as $idx |
+
+    # Index of first "default" fallback (to insert the new entry before it)
+    ([ .machines | to_entries[] |
+        select(.value.match == "default") | .key
+    ] | .[0]) as $default_idx |
+
+    if $idx != null then
+        # Machine entry exists — set / overwrite just this profile
+        .machines[$idx].profiles[$prof] = $cfg
+    else
+        # No entry yet — build one and splice it in
+        {description: $desc,
+         match: {machine_name: $mn},
+         profiles: {($prof): $cfg}} as $new |
+        if $default_idx != null then
+            .machines = (.machines[:$default_idx] + [$new] + .machines[$default_idx:])
+        else
+            .machines += [$new]
+        end
+    end
+    ' <<< "$_EM_JSON")
+
+# Atomic write via temp file
+_EM_TMP="$(mktemp "${_EM_FILE}.XXXXXX")"
+jq . <<< "$_EM_UPDATED" > "$_EM_TMP"
+mv "$_EM_TMP" "$_EM_FILE"
+
+echo ""
+echo -e "  ${_C_OK}${_C_BOLD}✓${_C_RESET}  Saved to ${_C_DIM}${_EM_FILE}${_C_RESET}"
+echo ""
