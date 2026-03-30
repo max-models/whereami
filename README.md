@@ -1,6 +1,8 @@
-# `whereami` - a.k.a `module load` made nice (and complex)
+# `whereami` - a.k.a overengineered `module load`
 
-Detects the current HPC machine and exports environment variables describing it.
+But there are some important use cases for this, I promise!
+
+This package detects the current HPC machine and exports environment variables describing it.
 Comes with `load_modules`, a companion script that reads a `modules.json` file
 and loads the right environment modules for the detected machine.
 
