@@ -1,4 +1,4 @@
-# whereami
+# `whereami` - a.k.a `module load` made nice (and complex)
 
 Detects the current HPC machine and exports environment variables describing it.
 Comes with `load_modules`, a companion script that reads a `modules.json` file
