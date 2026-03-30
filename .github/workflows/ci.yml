@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+
+  # ── Linux (bash 5, ubuntu-latest) ──────────────────────────────────────────
+  test-linux:
+    name: Tests (Linux / bash 5)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get install -y --no-install-recommends jq
+
+      - name: whereami — machine detection
+        run: bash tests/test_whereami.sh
+
+      - name: load_modules — profile resolution
+        run: bash tests/test_load_modules.sh
+
+      - name: edit_modules — JSON updates
+        run: bash tests/test_edit_modules.sh
+
+  # ── macOS (bash 3.2, arm64) ────────────────────────────────────────────────
+  test-macos:
+    name: Tests (macOS / bash 3)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: whereami — Apple Silicon detection
+        run: bash tests/test_apple.sh
+
+      - name: load_modules — profile resolution
+        run: bash tests/test_load_modules.sh
+
+      - name: edit_modules — JSON updates
+        run: bash tests/test_edit_modules.sh
