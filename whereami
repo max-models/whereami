@@ -73,6 +73,16 @@ KNOWN_MACHINE_NAMES=(
 "Shared Runner" "Shared GPU Runner (NVIDIA)" "Shared GPU Runner (AMD)"
 "Pitagora (DCGP)" "Pitagora (Booster)"
 "JUWELS (Booster)"
+"MacBook Air M1" "MacBook Air M2" "MacBook Air M3" "MacBook Air M4"
+"MacBook Pro M1" "MacBook Pro M1 Pro" "MacBook Pro M1 Max"
+"MacBook Pro M2" "MacBook Pro M2 Pro" "MacBook Pro M2 Max"
+"MacBook Pro M3" "MacBook Pro M3 Pro" "MacBook Pro M3 Max"
+"MacBook Pro M4" "MacBook Pro M4 Pro" "MacBook Pro M4 Max"
+"Mac Mini M1" "Mac Mini M2" "Mac Mini M4"
+"Mac Studio M1 Max" "Mac Studio M1 Ultra"
+"Mac Studio M2 Max" "Mac Studio M2 Ultra"
+"Mac Studio M4 Max" "Mac Studio M4 Ultra"
+"iMac M1" "iMac M3" "iMac M4"
 )
 
 KNOWN_MACHINE_HOSTS=(
@@ -82,13 +92,14 @@ KNOWN_MACHINE_HOSTS=(
 "University of Geneva" "NERSC" "JSC"
 )
 
-SUPPORTED_CPU_VENDORS=("" "Intel" "AMD" "IBM" "EPI-RVV")
+SUPPORTED_CPU_VENDORS=("" "Intel" "AMD" "IBM" "EPI-RVV" "Apple")
 SUPPORTED_CPUS=(
 "native" "EmeraldRapids" "SapphireRapids" "IceLake" "SkyLake"
 "CascadeLake" "KnightsLanding" "Broadwell" "Haswell"
 "IvyBridge" "SandyBridge" "Nehalem" "Core2"
 "Turin" "Bergamo" "Genoa" "Trento" "Milan" "Rome"
 "Power8" "Power9" "avispado"
+"M1" "M2" "M3" "M4"
 )
 
 SUPPORTED_GPU_VENDORS=("none" "NVIDIA" "AMD")
@@ -256,6 +267,27 @@ elif [[ "$HOSTNAME_ENV" =~ runner ]]; then
         CPU_VENDOR="Intel"
         CHIP="SkyLake"
     fi
+
+# Apple Silicon Mac
+elif [[ "$(uname -s 2>/dev/null)" == "Darwin" && "$(uname -m 2>/dev/null)" == "arm64" ]]; then
+    _hw_model="$(sysctl -n hw.model 2>/dev/null || echo '')"
+    _chip_full="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo '')"
+    _chip_full="${_chip_full#Apple }"   # strip "Apple M1" → "M1", "Apple M2 Pro" → "M2 Pro"
+    [[ -z "$_chip_full" ]] && _chip_full="Apple Silicon"
+    case "$_hw_model" in
+        MacBookAir*) _form="MacBook Air" ;;
+        MacBookPro*)  _form="MacBook Pro" ;;
+        MacMini*)     _form="Mac Mini"    ;;
+        MacStudio*)   _form="Mac Studio"  ;;
+        MacPro*)      _form="Mac Pro"     ;;
+        iMac*)        _form="iMac"        ;;
+        *)            _form="Apple Mac"   ;;
+    esac
+    MACHINE_NAME="${_form} ${_chip_full}"
+    MACHINE_HOST=""
+    CPU_VENDOR="Apple"
+    CHIP="${_chip_full%% *}"   # "M1 Pro" → "M1", "M2 Max" → "M2"
+    unset _hw_model _chip_full _form
 
 # User-defined fallback
 elif [[ -n "${GXTCUSERDEFINED:-}" ]]; then
