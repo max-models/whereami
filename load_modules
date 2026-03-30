@@ -174,7 +174,10 @@ _LM_RESULT=$(jq -c \
             )
         ) |
         . as $machine |
-        ($candidates | map(select($machine.profiles | has(.))) | .[0]) |
+        ($candidates
+         | map(select(. as $c | ($machine.profiles | has($c))))
+         | first
+        ) |
         select(. != null) |
         . as $prof |
         {
