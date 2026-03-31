@@ -17,7 +17,7 @@
 #   -n, --dry-run     show the updated JSON without writing to disk
 #   -h, --help        show this help message and exit
 
-set -euo pipefail
+# set -euo pipefail
 
 _em_fatal() { echo "ERROR: $*" >&2; exit 1; }
 _em_warn()  { echo "WARNING: $*" >&2; }
