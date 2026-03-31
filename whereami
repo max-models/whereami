@@ -8,7 +8,7 @@
 # Exports: MACHINE_NAME, MACHINE_HOST, CPU_VENDOR, CHIP,
 #          GPU_VENDOR, GPU_NAME, GPUS_FOUND, MACHINE_HOSTNAME
 
-set -euo pipefail
+# set -euo pipefail
 
 #######################################
 # Helpers
