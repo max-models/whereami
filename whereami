@@ -2,8 +2,8 @@
 # whereami — detect the current HPC machine and export environment variables
 #
 # Usage:
-#   source whereami [-h]
-#   ./whereami      [-h]
+#   source whereami [-o FILE] [-h]
+#   ./whereami      [-o FILE] [-h]
 #
 # Exports: MACHINE_NAME, MACHINE_HOST, CPU_VENDOR, CHIP,
 #          GPU_VENDOR, GPU_NAME, GPUS_FOUND, MACHINE_HOSTNAME
@@ -20,8 +20,8 @@ info()  { echo "INFO: $*"; }
 _whereami_help() {
     cat <<'EOF'
 Usage:
-  source whereami [-h]
-  ./whereami      [-h]
+  source whereami [-o FILE] [-h]
+  ./whereami      [-o FILE] [-h]
 
 Detects the current HPC machine and exports the following variables:
   MACHINE_NAME      Human-readable machine name  (e.g. "Raven", "LUMI-G")
@@ -34,17 +34,30 @@ Detects the current HPC machine and exports the following variables:
   MACHINE_HOSTNAME  System hostname
 
 Options:
-  -h, --help    Show this help message and exit
+  -o, --output FILE   Also write the detected parameters to FILE as JSON
+  -h, --help          Show this help message and exit
 EOF
 }
 
+# Note: no `shift` here — when this script is sourced without its own arguments
+# it shares the calling shell's positional parameters, which must stay intact.
+_WAI_OUTPUT=""
+_wai_want_output=false
 for _arg in "$@"; do
+    if $_wai_want_output; then
+        _WAI_OUTPUT="$_arg"
+        _wai_want_output=false
+        continue
+    fi
     case "$_arg" in
-        -h|--help) _whereami_help; return 0 2>/dev/null || exit 0 ;;
+        -h|--help)            _whereami_help; return 0 2>/dev/null || exit 0 ;;
+        -o|--output)          _wai_want_output=true ;;
+        -o=*|--output=*)      _WAI_OUTPUT="${_arg#*=}" ;;
         *) fatal "Unknown option: $_arg" ;;
     esac
 done
-unset _arg
+$_wai_want_output && fatal "Missing FILE argument for --output"
+unset _arg _wai_want_output
 
 in_list() {
     local val="$1"; shift
@@ -330,6 +343,33 @@ fi
 #######################################
 export MACHINE_NAME MACHINE_HOST CPU_VENDOR CHIP GPU_VENDOR GPU_NAME GPUS_FOUND MACHINE_HOSTNAME="$HOSTNAME_SYS"
 
+#######################################
+# Optionally write the results to a JSON file (-o / --output)
+#######################################
+_json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    printf '%s' "$s"
+}
+
+if [[ -n "$_WAI_OUTPUT" ]]; then
+    _wai_dir="$(dirname "$_WAI_OUTPUT")"
+    mkdir -p "$_wai_dir" || fatal "Cannot create output directory: $_wai_dir"
+    cat > "$_WAI_OUTPUT" <<EOF || fatal "Cannot write output file: $_WAI_OUTPUT"
+{
+  "MACHINE_NAME": "$(_json_escape "$MACHINE_NAME")",
+  "MACHINE_HOST": "$(_json_escape "$MACHINE_HOST")",
+  "CPU_VENDOR": "$(_json_escape "$CPU_VENDOR")",
+  "CHIP": "$(_json_escape "$CHIP")",
+  "GPU_VENDOR": "$(_json_escape "$GPU_VENDOR")",
+  "GPU_NAME": "$(_json_escape "$GPU_NAME")",
+  "GPUS_FOUND": $GPUS_FOUND,
+  "MACHINE_HOSTNAME": "$(_json_escape "$HOSTNAME_SYS")"
+}
+EOF
+fi
+
 # info "Machine: $MACHINE_HOST $MACHINE_NAME"
 # info "CPU: $CPU_VENDOR $CHIP"
 # info "GPU: $GPU_VENDOR $GPU_NAME (found=$GPUS_FOUND)"
@@ -398,4 +438,5 @@ _row "GPU_NAME"         "$GPU_NAME"         "$(_set_marker "$GPU_NAME"      "non
 _row "GPUS_FOUND"       "$GPUS_FOUND"       "$(_set_marker "$GPUS_FOUND"    "false")"
 _row "MACHINE_HOSTNAME" "$HOSTNAME_SYS"     ""
 echo -e "$_border_bot"
+[[ -n "$_WAI_OUTPUT" ]] && echo -e "  ${_C_DEF}written to${_C_RESET} ${_C_KEY}${_WAI_OUTPUT}${_C_RESET}"
 echo ""

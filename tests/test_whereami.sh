@@ -40,6 +40,50 @@ eq "--help exits 0" "0" "$?"
 bash whereami --unknown >/dev/null 2>&1; rc=$?
 eq "unknown option exits non-zero" "1" "$rc"
 
+bash whereami -o >/dev/null 2>&1; rc=$?
+eq "--output without FILE exits non-zero" "1" "$rc"
+
+# ── JSON output ──────────────────────────────────────────────────────────────
+
+printf '\n=== json output ===\n'
+
+_out_dir=$(mktemp -d)
+
+(
+    unset HOST HOSTNAME HPC_SYSTEM LMOD_ADMIN_FILE NERSC_HOST \
+          CI_RUNNER_TAGS PARTITION GXTCUSERDEFINED
+    export HOST=raven1
+    bash whereami -o "${_out_dir}/nested/info.json"
+) >/dev/null 2>&1
+eq "-o writes the file (creating parent dirs)" "0" "$([[ -f ${_out_dir}/nested/info.json ]] && echo 0 || echo 1)"
+
+if command -v jq &>/dev/null; then
+    j="${_out_dir}/nested/info.json"
+    eq "-o produces valid JSON" "0" "$(jq -e . "$j" >/dev/null 2>&1; echo $?)"
+    eq "-o MACHINE_NAME" "Raven"   "$(jq -r .MACHINE_NAME "$j")"
+    eq "-o CHIP"         "IceLake" "$(jq -r .CHIP "$j")"
+    eq "-o GPUS_FOUND is a boolean" "boolean" "$(jq -r '.GPUS_FOUND|type' "$j")"
+else
+    printf 'SKIP  json content checks (jq not found)\n'
+fi
+
+# --output=FILE form
+(
+    unset HOST HOSTNAME HPC_SYSTEM LMOD_ADMIN_FILE NERSC_HOST \
+          CI_RUNNER_TAGS PARTITION GXTCUSERDEFINED
+    export HOST=raven1
+    bash whereami --output="${_out_dir}/eq.json"
+) >/dev/null 2>&1
+eq "--output=FILE writes the file" "0" "$([[ -f ${_out_dir}/eq.json ]] && echo 0 || echo 1)"
+
+# Sourcing with -o must not clobber the caller's positional parameters
+set -- keep1 keep2
+source ./whereami -o "${_out_dir}/sourced.json" >/dev/null 2>&1
+eq "sourced -o leaves \$@ intact" "keep1 keep2" "$*"
+set --
+
+rm -rf "$_out_dir"
+
 # ── Machine detection ────────────────────────────────────────────────────────
 
 printf '\n=== machine detection ===\n'
