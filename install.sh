@@ -1,14 +1,28 @@
 #!/usr/bin/env bash
-# install.sh — install whereami and load_modules into $HOME/.local/bin
+# install.sh — install whereami and load_modules into an install directory
+#              (default: $HOME/.local/bin)
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/max-models/whereami/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/max-models/whereami/main/install.sh | bash -s -- /opt/bin
+#   ./install.sh /opt/bin
+#   WHEREAMI_INSTALL_DIR=/opt/bin ./install.sh
 
 set -euo pipefail
 
 REPO_RAW="https://raw.githubusercontent.com/max-models/whereami/main"
-INSTALL_DIR="${HOME}/.local/bin"
+INSTALL_DIR="${1:-${WHEREAMI_INSTALL_DIR:-${HOME}/.local/bin}}"
 FILES=(whereami load_modules edit_modules)
+
+case "${1:-}" in
+    -h|--help)
+        echo "Usage: install.sh [INSTALL_DIR]"
+        echo ""
+        echo "Installs whereami, load_modules and edit_modules into INSTALL_DIR."
+        echo "INSTALL_DIR defaults to \$WHEREAMI_INSTALL_DIR, or \$HOME/.local/bin."
+        exit 0
+        ;;
+esac
 
 # Colors
 _C_RESET="\033[0m"
@@ -60,7 +74,7 @@ case ":${PATH}:" in
         echo -e "  ${_C_NOTE}NOTE:${_C_RESET} ${_C_PATH}${INSTALL_DIR}${_C_RESET} is not in your PATH."
         echo -e "  Add this to your ${_C_DIM}~/.bashrc${_C_RESET} or ${_C_DIM}~/.zshrc${_C_RESET}:"
         echo ""
-        echo -e "    ${_C_DIM}export PATH=\"\${HOME}/.local/bin:\${PATH}\"${_C_RESET}"
+        echo -e "    ${_C_DIM}export PATH=\"${INSTALL_DIR}:\${PATH}\"${_C_RESET}"
         echo ""
         ;;
 esac
