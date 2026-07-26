@@ -38,6 +38,26 @@ source whereami      # detect and export variables into the current shell
 whereami --help      # show usage
 ```
 
+Use `-o`/`--output` to also save the detected parameters as JSON (parent
+directories are created if needed):
+
+```bash
+whereami -o machine.json
+```
+
+```json
+{
+  "MACHINE_NAME": "Raven",
+  "MACHINE_HOST": "MPCDF",
+  "CPU_VENDOR": "Intel",
+  "CHIP": "IceLake",
+  "GPU_VENDOR": "NVIDIA",
+  "GPU_NAME": "A100",
+  "GPUS_FOUND": true,
+  "MACHINE_HOSTNAME": "ravenlogin1"
+}
+```
+
 After sourcing, the following variables are available in your environment:
 
 | Variable           | Example values                          |
