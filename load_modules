@@ -31,7 +31,11 @@
 
 # set -euo pipefail
 
-_lm_fatal() { echo "ERROR: $*" >&2; return 1 2>/dev/null || exit 1; }
+# Prints an error. `return` inside a function only leaves that function, so
+# callers must stop the script themselves with the `_LM_STOP` idiom:
+#   ... || { _lm_fatal "msg"; return 1 2>/dev/null || exit 1; }
+# which returns when sourced and exits when executed.
+_lm_fatal() { echo "ERROR: $*" >&2; }
 _lm_info()  { echo "INFO: $*"; }
 _lm_warn()  { echo "WARNING: $*" >&2; }
 
@@ -74,8 +78,15 @@ while [[ $# -gt 0 ]]; do
         -f|--file)     _LM_FILE="$2";    shift 2 ;;
         -n|--dry-run)  _LM_DRY_RUN=true; shift   ;;
         -v|--verbose)  _LM_VERBOSE=true; shift   ;;
-        -*) _lm_fatal "Unknown option: $1" ;;
-        *.json) [[ -z "$_LM_FILE" ]] && _LM_FILE="$1" || _lm_fatal "Multiple JSON files specified: $_LM_FILE and $1"; shift ;;
+        -*) _lm_fatal "Unknown option: $1"; return 1 2>/dev/null || exit 1 ;;
+        *.json)
+            if [[ -z "$_LM_FILE" ]]; then
+                _LM_FILE="$1"
+            else
+                _lm_fatal "Multiple JSON files specified: $_LM_FILE and $1"
+                return 1 2>/dev/null || exit 1
+            fi
+            shift ;;
         *)  _LM_PROFILE_PARTS+=("$1");   shift   ;;
     esac
 done
@@ -91,12 +102,14 @@ fi
 # Resolve modules file
 #######################################
 [[ -z "$_LM_FILE" ]] && _LM_FILE="${PWD}/modules.json"
-[[ -f "$_LM_FILE" ]] || _lm_fatal "Modules file not found: $_LM_FILE"
+[[ -f "$_LM_FILE" ]] || \
+    { _lm_fatal "Modules file not found: $_LM_FILE"; return 1 2>/dev/null || exit 1; }
 
 #######################################
 # Check dependencies
 #######################################
-command -v jq &>/dev/null || _lm_fatal "jq is required but not found in PATH."
+command -v jq &>/dev/null || \
+    { _lm_fatal "jq is required but not found in PATH."; return 1 2>/dev/null || exit 1; }
 
 #######################################
 # Detect machine
@@ -104,7 +117,8 @@ command -v jq &>/dev/null || _lm_fatal "jq is required but not found in PATH."
 #######################################
 if [[ -z "${MACHINE_NAME:-}" ]]; then
     _LM_WHEREAMI="${_LM_SCRIPT_DIR}/whereami"
-    [[ -f "$_LM_WHEREAMI" ]] || _lm_fatal "whereami not found at: $_LM_WHEREAMI"
+    [[ -f "$_LM_WHEREAMI" ]] || \
+        { _lm_fatal "whereami not found at: $_LM_WHEREAMI"; return 1 2>/dev/null || exit 1; }
     # shellcheck source=./whereami
     source "$_LM_WHEREAMI"
 fi
@@ -188,8 +202,10 @@ _LM_RESULT=$(jq -c \
     ) // null
     ' "$_LM_FILE")
 
-[[ -n "$_LM_RESULT" && "$_LM_RESULT" != "null" ]] || \
+[[ -n "$_LM_RESULT" && "$_LM_RESULT" != "null" ]] || {
     _lm_fatal "No matching machine+profile found for '$_LM_PROFILE' on machine '$MACHINE_NAME'. Add a \"default\" machine entry as a fallback."
+    return 1 2>/dev/null || exit 1
+}
 
 _LM_RESOLVED_PROFILE=$(jq -r '.profile'      <<< "$_LM_RESULT")
 _LM_CONFIG=$(          jq -c '.config'        <<< "$_LM_RESULT")
