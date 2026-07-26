@@ -48,6 +48,10 @@ _download() {
     fi
 }
 
+mkdir -p "$INSTALL_DIR"
+# Resolve to an absolute path so messages and the PATH check are unambiguous
+INSTALL_DIR="$(cd "$INSTALL_DIR" && pwd -P)"
+
 echo ""
 echo -e "${_C_FRAME}┌─────────────────────────────────────┐${_C_RESET}"
 echo -e "${_C_FRAME}│${_C_RESET}  ${_C_TITLE}${_C_BOLD}whereami — installer${_C_RESET}                ${_C_FRAME}│${_C_RESET}"
@@ -55,8 +59,6 @@ echo -e "${_C_FRAME}└───────────────────
 echo ""
 echo -e "  ${_C_DIM}destination:${_C_RESET} ${_C_PATH}${INSTALL_DIR}${_C_RESET}"
 echo ""
-
-mkdir -p "$INSTALL_DIR"
 
 for f in "${FILES[@]}"; do
     printf "  installing %-15s" "$f"
