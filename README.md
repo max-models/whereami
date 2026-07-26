@@ -19,6 +19,13 @@ If that directory is not yet on your `PATH`, add this to your shell config:
 export PATH="${HOME}/.local/bin:${PATH}"
 ```
 
+To install somewhere else, pass the target directory as an argument (or set
+`WHEREAMI_INSTALL_DIR`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/max-models/whereami/main/install.sh | bash -s -- /opt/bin
+```
+
 ---
 
 ## `whereami`
