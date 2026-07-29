@@ -26,6 +26,9 @@ jobs:
       - name: edit_modules — JSON updates
         run: bash tests/test_edit_modules.sh
 
+      - name: install.sh — install dir and PATH setup
+        run: bash tests/test_install.sh
+
   # ── macOS (bash 3.2, arm64) ────────────────────────────────────────────────
   test-macos:
     name: Tests (macOS / bash 3)
@@ -41,3 +44,6 @@ jobs:
 
       - name: edit_modules — JSON updates
         run: bash tests/test_edit_modules.sh
+
+      - name: install.sh — install dir and PATH setup
+        run: bash tests/test_install.sh
