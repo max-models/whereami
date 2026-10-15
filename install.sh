@@ -63,19 +63,29 @@ _C_DIM="\033[0;90m"     # dark gray
 _C_FRAME="\033[0;36m"   # cyan
 
 # Prefer curl, fall back to wget
+# Downloads to a sibling temp file and renames it into place.  The rename is
+# atomic and gives the destination a fresh inode, so a failed download can't
+# leave a half-written script behind — and `whereami --update` can safely
+# replace the file that bash is executing at that very moment.
 _download() {
-    local url="$1" dest="$2"
+    local url="$1" dest="$2" tmp="$2.tmp.$$"
     if [[ "$url" == file://* ]]; then
-        cp "${url#file://}" "$dest"
+        cp "${url#file://}" "$tmp"
     elif command -v curl &>/dev/null; then
-        curl -fsSL "$url" -o "$dest"
+        curl -fsSL "$url" -o "$tmp"
     elif command -v wget &>/dev/null; then
-        wget -qO "$dest" "$url"
+        wget -qO "$tmp" "$url"
     else
         echo -e "${_C_ERR}ERROR: neither curl nor wget found${_C_RESET}" >&2
         exit 1
     fi
+    chmod +x "$tmp"
+    mv -f "$tmp" "$dest"
 }
+
+# Don't leave temp files behind if a download fails mid-flight
+_cleanup() { rm -f "${INSTALL_DIR:-}"/*.tmp.$$ 2>/dev/null || true; }
+trap _cleanup EXIT
 
 mkdir -p "$INSTALL_DIR"
 # Resolve to an absolute path so messages are unambiguous.  Keep the requested
@@ -95,7 +105,6 @@ echo ""
 for f in "${FILES[@]}"; do
     printf "  installing %-15s" "$f"
     _download "${REPO_RAW}/${f}" "${INSTALL_DIR}/${f}"
-    chmod +x "${INSTALL_DIR}/${f}"
     echo -e "  ${_C_OK}✓${_C_RESET}"
 done
 

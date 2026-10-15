@@ -4,6 +4,7 @@
 # Usage:
 #   source whereami [-o FILE] [-h]
 #   ./whereami      [-o FILE] [-h]
+#   whereami --update            # re-install the tools from the repo
 #
 # Exports: MACHINE_NAME, MACHINE_HOST, CPU_VENDOR, CHIP,
 #          GPU_VENDOR, GPU_NAME, GPUS_FOUND, MACHINE_HOSTNAME
@@ -22,6 +23,7 @@ _whereami_help() {
 Usage:
   source whereami [-o FILE] [-h]
   ./whereami      [-o FILE] [-h]
+  whereami --update
 
 Detects the current HPC machine and exports the following variables:
   MACHINE_NAME      Human-readable machine name  (e.g. "Raven", "LUMI-G")
@@ -35,13 +37,58 @@ Detects the current HPC machine and exports the following variables:
 
 Options:
   -o, --output FILE   Also write the detected parameters to FILE as JSON
+  -u, --update        Re-download whereami, load_modules and edit_modules
+                      into the directory this script lives in, then exit
   -h, --help          Show this help message and exit
 EOF
+}
+
+# Re-run the installer against the directory this script was started from, so
+# all three tools are refreshed together.  Set WHEREAMI_REPO_RAW to update from
+# a fork, a tag, or a local checkout ("file:///path/to/whereami").
+_whereami_update() {
+    local repo_raw="${WHEREAMI_REPO_RAW:-https://raw.githubusercontent.com/max-models/whereami/main}"
+    local dir installer rc=0
+    dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+
+    # Refuse to overwrite a git checkout — that would clobber local work
+    if [[ -d "${dir}/.git" ]]; then
+        echo "ERROR: ${dir} is a git checkout; update it with 'git pull' instead." >&2
+        return 1
+    fi
+
+    installer="$(mktemp "${TMPDIR:-/tmp}/whereami-install.XXXXXX")" || {
+        echo "ERROR: cannot create a temporary file for the installer" >&2
+        return 1
+    }
+
+    echo "INFO: updating whereami in ${dir} (source: ${repo_raw})"
+
+    if [[ "$repo_raw" == file://* ]]; then
+        cp "${repo_raw#file://}/install.sh" "$installer" || rc=$?
+    elif command -v curl &>/dev/null; then
+        curl -fsSL "${repo_raw}/install.sh" -o "$installer" || rc=$?
+    elif command -v wget &>/dev/null; then
+        wget -qO "$installer" "${repo_raw}/install.sh" || rc=$?
+    else
+        echo "ERROR: neither curl nor wget found" >&2
+        rc=1
+    fi
+
+    if [[ $rc -eq 0 ]]; then
+        bash "$installer" "$dir" || rc=$?
+    else
+        echo "ERROR: could not download the installer from ${repo_raw}/install.sh" >&2
+    fi
+
+    rm -f "$installer"
+    return $rc
 }
 
 # Note: no `shift` here — when this script is sourced without its own arguments
 # it shares the calling shell's positional parameters, which must stay intact.
 _WAI_OUTPUT=""
+_WAI_UPDATE=false
 _wai_want_output=false
 for _arg in "$@"; do
     if $_wai_want_output; then
@@ -53,11 +100,20 @@ for _arg in "$@"; do
         -h|--help)            _whereami_help; return 0 2>/dev/null || exit 0 ;;
         -o|--output)          _wai_want_output=true ;;
         -o=*|--output=*)      _WAI_OUTPUT="${_arg#*=}" ;;
+        -u|--update)          _WAI_UPDATE=true ;;
         *) fatal "Unknown option: $_arg" ;;
     esac
 done
 $_wai_want_output && fatal "Missing FILE argument for --output"
 unset _arg _wai_want_output
+
+# Updating replaces this very file, so do it and stop rather than carrying on
+# with detection using half-old code.
+if $_WAI_UPDATE; then
+    _whereami_update || { unset _WAI_UPDATE _WAI_OUTPUT; return 1 2>/dev/null || exit 1; }
+    unset _WAI_UPDATE _WAI_OUTPUT
+    return 0 2>/dev/null || exit 0
+fi
 
 in_list() {
     local val="$1"; shift

@@ -84,6 +84,43 @@ set --
 
 rm -rf "$_out_dir"
 
+# ── Self-update ──────────────────────────────────────────────────────────────
+
+printf '\n=== self-update ===\n'
+
+# Updating a git checkout would clobber local work — it must refuse
+bash whereami --update >/dev/null 2>&1; rc=$?
+eq "--update refuses a git checkout" "1" "$rc"
+
+# Install a copy elsewhere, break it, and let it repair itself from this checkout
+_upd=$(cd "$(mktemp -d)" && pwd -P)
+env HOME="$_upd" SHELL=/bin/zsh WHEREAMI_REPO_RAW="file://${PWD}" \
+    bash install.sh "$_upd/bin" >/dev/null 2>&1
+
+echo '# local damage' >> "$_upd/bin/whereami"
+echo 'broken'          > "$_upd/bin/load_modules"
+
+env HOME="$_upd" SHELL=/bin/zsh WHEREAMI_REPO_RAW="file://${PWD}" \
+    PATH="$_upd/bin:$PATH" bash "$_upd/bin/whereami" --update >/dev/null 2>&1
+eq "--update exits 0" "0" "$?"
+eq "--update restores whereami"     "0" "$(cmp -s "$_upd/bin/whereami" whereami; echo $?)"
+eq "--update restores load_modules" "0" "$(cmp -s "$_upd/bin/load_modules" load_modules; echo $?)"
+eq "--update leaves no temp files"  "0" \
+   "$(find "$_upd/bin" -name '*.tmp.*' | wc -l | tr -d ' ')"
+
+# Updating while sourced must not kill the calling shell
+out=$(env HOME="$_upd" SHELL=/bin/zsh WHEREAMI_REPO_RAW="file://${PWD}" \
+      bash -c "source '$_upd/bin/whereami' --update >/dev/null 2>&1; echo alive")
+eq "sourced --update returns to the shell" "alive" "$out"
+
+# An unreachable source must fail loudly, not half-install
+env HOME="$_upd" SHELL=/bin/zsh WHEREAMI_REPO_RAW="file:///nonexistent-whereami" \
+    bash "$_upd/bin/whereami" --update >/dev/null 2>&1; rc=$?
+eq "--update fails when the source is unreachable" "1" "$rc"
+eq "failed --update leaves whereami intact" "0" "$(cmp -s "$_upd/bin/whereami" whereami; echo $?)"
+
+rm -rf "$_upd"
+
 # ── Machine detection ────────────────────────────────────────────────────────
 
 printf '\n=== machine detection ===\n'
