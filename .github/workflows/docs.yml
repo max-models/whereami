@@ -1,0 +1,33 @@
+name: Docs
+
+# The Astro + Starlight site in docs/, built on every push and pull request with the shared
+# workflow of max-models/starlight-theme; deployed to GitHub Pages from main.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    uses: max-models/starlight-theme/.github/workflows/docs.yml@v0.6.1
+    with:
+      notebooks: false
+      deploy-branch: main
+      smoke-paths: |
+        getting-started/installation/index.html
+        usage/whereami/index.html
+        usage/load-modules/index.html
+        usage/modules-json/index.html
+        usage/edit-modules/index.html

@@ -1,0 +1,31 @@
+---
+title: whereami
+description: Detect the current HPC machine and load the right environment modules.
+template: splash
+hero:
+  tagline: An overengineered `module load`. Detects the HPC machine, CPU and GPU, exports them as environment variables, and loads the matching modules from a modules.json.
+  actions:
+    - text: Get started
+      link: /whereami/getting-started/installation/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/max-models/whereami
+      icon: external
+      variant: minimal
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Start here
+
+<CardGrid>
+	<LinkCard title="Installation" href="/whereami/getting-started/installation/" description="One curl command, no sudo." />
+	<LinkCard title="whereami" href="/whereami/usage/whereami/" description="Detect the machine and export its variables." />
+	<LinkCard title="load_modules" href="/whereami/usage/load-modules/" description="Load the modules of the detected machine." />
+	<LinkCard title="modules.json" href="/whereami/usage/modules-json/" description="Machines, matches, profiles and fallbacks." />
+	<LinkCard title="edit_modules" href="/whereami/usage/edit-modules/" description="Edit a machine profile interactively." />
+</CardGrid>
+
+## Acknowledgements
+
+The template for this project is taken from the [confix tool](https://gitlab.mpcdf.mpg.de/phoenix-public/confix) used in [GENE-X](https://gitlab.mpcdf.mpg.de/phoenix-public/genex).
