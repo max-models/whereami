@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   docs:
-    uses: max-models/starlight-theme/.github/workflows/docs.yml@no-python-and-user-sites
+    uses: max-models/starlight-theme/.github/workflows/docs.yml@v0.6.1
     with:
       notebooks: false
       deploy-branch: main
